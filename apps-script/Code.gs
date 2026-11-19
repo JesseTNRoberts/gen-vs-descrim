@@ -46,10 +46,13 @@ function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     switch (body.action) {
+      // Only joining needs the script-wide lock (it hands out the next arrival number).
+      // Drawing and judging touch only their own pair's state, and the two teams take turns,
+      // so they skip the lock: a busy classroom never queues behind one slow sheet write.
       case 'r2join':  return json_(withLock_(() => r2Join_(body)));
-      case 'r2draw':  return json_(withLock_(() => r2Draw_(body)));
-      case 'r2judge': return json_(withLock_(() => r2Judge_(body)));
-      case 'r2guess': return json_(withLock_(() => r2Guess_(body)));
+      case 'r2draw':  return json_(r2Draw_(body));
+      case 'r2judge': return json_(r2Judge_(body));
+      case 'r2guess': return json_(r2Guess_(body));
       default:        return json_(withLock_(() => saveAnswers_(body)));
     }
   } catch (err) {
