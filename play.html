@@ -255,17 +255,27 @@
       window.scrollTo(0, 0);
     };
     if (DEMO) return setTimeout(finish, 400);
-    fetch(cfg.scriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // keeps it a "simple" request (no CORS preflight)
-      body: JSON.stringify(payload)
-    })
-      .then((r) => r.json())
-      .then((res) => { if (!res.ok) throw new Error(res.error || 'not saved'); finish(); })
-      .catch(() => {
-        btn.disabled = false; btn.textContent = 'Submit';
-        $('submitErr').textContent = 'That didn’t go through. Check your connection and tap Submit again.';
-      });
+    // If the whole room submits at once some requests get turned away; keep retrying, spread out.
+    let failures = 0;
+    (function send() {
+      fetch(cfg.scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // keeps it a "simple" request (no CORS preflight)
+        body: JSON.stringify(payload)
+      })
+        .then((r) => r.json())
+        .then((res) => { if (!res.ok) throw new Error(res.error || 'not saved'); finish(); })
+        .catch(() => {
+          failures++;
+          if (failures >= 8) {
+            btn.disabled = false; btn.textContent = 'Submit';
+            $('submitErr').textContent = 'That didn’t go through. Check your connection and tap Submit again.';
+            return;
+          }
+          btn.textContent = 'Sending… (busy, retrying)';
+          setTimeout(send, Math.min(8000, 1000 * failures) + Math.random() * 2000);
+        });
+    })();
   };
 })();
 </script>

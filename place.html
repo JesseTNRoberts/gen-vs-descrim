@@ -115,21 +115,25 @@
   }
 
   // ---------- Get a rule (once per session per phone) ----------
+  // The board appears straight away and the rule is fetched in the background while the
+  // student places the first + and =, so a whole room scanning at once never sees a wait.
+  let onRule = () => {};
   function begin() {
-    if (me && me.rule) return start();
-    if (DEMO) {
-      me = { rule: params.get('rule') || Object.keys(R.rules)[Math.floor(Math.random() * 4)], attempts: [], guess: null };
-      return start();
-    }
-    let tries = 6;
+    if (!me) me = { rule: null, attempts: [], guess: null };
+    if (DEMO && !me.rule) me.rule = params.get('rule') || Object.keys(R.rules)[Math.floor(Math.random() * 4)];
+    start();
+    if (me.rule) return;
+    let failures = 0;
     (function join() {
       post({ action: 'join' }).then((d) => {
-        me = { rule: d.rule, player: d.player, attempts: [], guess: null };
+        me.rule = d.rule; me.player = d.player;
         store(saveKey, JSON.stringify(me));
-        start();
+        $('saveErr').textContent = '';
+        onRule();
       }).catch(() => {
-        if (--tries > 0) setTimeout(join, 1000 + Math.random() * 2500);
-        else problem('Couldn’t reach the class server. Check your connection and try again.');
+        failures++;
+        if (failures >= 3) $('saveErr').textContent = 'Still connecting to the class server…';
+        setTimeout(join, Math.min(8000, 1000 * failures) + Math.random() * 2000);   // keep trying, spread out
       });
     })();
   }
@@ -155,9 +159,10 @@
   function start() {
     show('game');
     $('game').style.display = 'flex';
+    onRule = () => refresh();
     $('title').textContent = R.title;
     $('help').textContent = R.help;
-    if (me.attempts.length) save();   // make sure the server has what this phone has
+    if (me.rule && me.attempts.length) save();   // make sure the server has what this phone has
 
     let plus = null, eq = null, flashing = false;
     const clamp = (v) => Math.max(0.06, Math.min(0.94, v));
@@ -187,8 +192,9 @@
         : won() ? 'You found it: three ✓ in a row!'
         : !plus ? 'Try ' + (n + 1) + ' of ' + R.maxAttempts + ': tap to place the +'
         : !eq ? 'Now tap to place the ='
+        : !me.rule ? 'One moment: getting your secret rule…'
         : 'Press Check (or tap to start over)';
-      $('checkBtn').disabled = !(plus && eq) || finished() || flashing;
+      $('checkBtn').disabled = !(plus && eq) || finished() || flashing || !me.rule;
       $('clearBtn').disabled = finished();
       const s = Math.min(streak(), R.winStreak);
       $('streak').innerHTML = Array.from({ length: R.winStreak }, (_, i) => '<span class="dot' + (i < s ? ' on' : '') + '"></span>').join('');
@@ -214,7 +220,7 @@
     $('clearBtn').onclick = () => { plus = eq = null; drawBoard(); refresh(); };
 
     $('checkBtn').onclick = () => {
-      if (!(plus && eq) || finished()) return;
+      if (!(plus && eq) || finished() || !me.rule) return;
       const a = { px: +plus[0].toFixed(3), py: +plus[1].toFixed(3), ex: +eq[0].toFixed(3), ey: +eq[1].toFixed(3) };
       a.v = R.rules[me.rule].test(a) ? 'yes' : 'no';
       me.attempts.push(a);
