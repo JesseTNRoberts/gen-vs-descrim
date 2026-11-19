@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Round 2: Draw for the judges</title>
+<title>Round 2: Find the hidden rule</title>
 <link rel="stylesheet" href="style.css">
 <style>
   body { padding: 20px 28px 40px; }
@@ -11,10 +11,8 @@
   header h1 { font-size: 22px; margin: 0 12px 0 0; letter-spacing: -.01em; }
   .muted-h { color: var(--text-muted); font-weight: 400; }
   .session { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 15px; }
-  .session code {
-    font: 600 15px ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; color: var(--text-primary);
-  }
+  .session code { font: 600 15px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-1);
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; color: var(--text-primary); }
   .tabs { display: flex; gap: 4px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
   .tabs button { border: 0; background: none; padding: 7px 18px; border-radius: 999px; font-size: 15px; color: var(--text-secondary); }
   .tabs button[aria-selected="true"] { background: var(--text-primary); color: var(--surface-1); }
@@ -22,6 +20,7 @@
   .status { font-size: 13px; color: var(--text-muted); }
   .status.err { color: #b42b2a; }
   .demo-flag { font-size: 12px; font-weight: 700; color: #8a5a00; background: #fff3d6; border-radius: 6px; padding: 3px 8px; }
+  .empty { color: var(--text-muted); font-size: 15px; }
 
   /* Join */
   #join { display: grid; grid-template-columns: minmax(300px, 520px) 1fr; gap: 28px; }
@@ -36,59 +35,66 @@
   .tile .n { font-size: 44px; font-weight: 800; line-height: 1; }
   .tile .lbl { font-size: 15px; color: var(--text-secondary); margin-top: 6px; }
 
-  /* Learning curve */
-  .grid2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; }
+  /* Players */
+  .note { font-size: 14px; color: var(--text-muted); margin: 0 0 14px; }
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .pc { padding: 10px; }
+  .pc .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 6px; }
+  .pc .name { font-size: 15px; font-weight: 700; }
+  .pc .st { font-size: 12px; color: var(--text-muted); font-weight: 600; text-align: right; }
+  .pc .st.won { color: #0c7a37; }
+  .pc .rule { font-size: 12px; color: var(--disc); font-weight: 700; margin-bottom: 4px; }
+  .pc svg.board { width: 100%; aspect-ratio: 1 / 1; background: #fff; border: 3px solid var(--line); border-radius: 8px; display: block; }
+  .pc svg.board.y { border-color: #0c7a37; } .pc svg.board.n { border-color: #b42b2a; }
+  svg text.g { font: 800 26px ui-sans-serif, system-ui, sans-serif; fill: #111; dominant-baseline: central; text-anchor: middle; }
+  .slots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; margin-top: 6px; }
+  .slot { height: 14px; border-radius: 2px; background: var(--surface-0); border: 1px solid var(--line); }
+  .slot.y { background: #0c7a37; border-color: #0c7a37; }
+  .slot.n { background: #b42b2a; border-color: #b42b2a; }
+
+  /* Summary */
+  .grid2 { display: grid; grid-template-columns: 1.25fr 1fr; gap: 22px; }
   .card h2 { font-size: 17px; margin: 0 0 4px; }
   .card .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 18px; }
   .chart { display: grid; grid-template-columns: 44px 1fr; gap: 0 10px; }
-  .yaxis { display: flex; flex-direction: column; justify-content: space-between; height: 320px; font-size: 13px; color: var(--text-muted); text-align: right; }
-  .plot { position: relative; height: 320px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--text-muted); }
+  .yaxis { display: flex; flex-direction: column; justify-content: space-between; height: 280px; font-size: 13px; color: var(--text-muted); text-align: right; }
+  .plot { position: relative; height: 280px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--text-muted); }
   .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); }
+  .chance { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--text-muted); z-index: 1; }
+  .chance span { position: absolute; right: 4px; top: -20px; font-size: 12px; color: var(--text-muted); background: var(--surface-1); padding: 0 4px; }
   .bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 6px; padding: 0 6px; }
   .bar { flex: 1; background: var(--gen); border-radius: 4px 4px 0 0; min-height: 2px; position: relative; transition: height .5s ease; }
   .bar .v { position: absolute; top: -20px; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
   .xlabels { grid-column: 2; display: flex; gap: 6px; padding: 6px 6px 0; }
   .xlabels div { flex: 1; text-align: center; font-size: 12px; color: var(--text-muted); line-height: 1.3; }
   .xtitle { grid-column: 2; text-align: center; font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
-  .empty { color: var(--text-muted); font-size: 15px; }
-  .stat { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
-  .stat b { font-variant-numeric: tabular-nums; }
-  .guesses { list-style: none; margin: 0; padding: 0; }
-  .guesses li { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 16px; line-height: 1.4; }
+  .scatters { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .sc { text-align: center; font-size: 14px; font-weight: 600; }
+  .sc svg { width: 100%; aspect-ratio: 1 / 1; background: #fff; border: 1px solid var(--line); border-radius: 8px; display: block; margin-bottom: 4px; }
+  .legend { display: flex; gap: 16px; justify-content: center; font-size: 13px; color: var(--text-secondary); margin-top: 10px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .guesses { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 32px; }
+  .guesses li { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 16px; line-height: 1.4; break-inside: avoid; }
   .guesses .who { font-size: 12px; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 2px; }
-
-  /* Gallery */
-  .rulegrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .rulecol h3 { margin: 0 0 10px; font-size: 18px; }
-  .rulecol .cnt { font-size: 13px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
-  .overlay-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .ov { text-align: center; font-size: 12px; font-weight: 700; }
-  .ov canvas { width: 100%; aspect-ratio: 1 / 1; background: #fff; border-radius: 8px; border: 2px solid var(--line); display: block; margin-bottom: 4px; }
-  .ov.y canvas { border-color: #0c7a37; } .ov.y { color: #0c7a37; }
-  .ov.n canvas { border-color: #b42b2a; } .ov.n { color: #b42b2a; }
-  .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
-  .thumbs img { width: 100%; aspect-ratio: 1 / 1; border-radius: 6px; border: 2px solid var(--line); background: #fff; display: block; }
-  .thumbs img.y { border-color: #0c7a37; } .thumbs img.n { border-color: #b42b2a; }
-  .gal-note { font-size: 14px; color: var(--text-muted); margin: 0 0 16px; }
 
   #reveal { margin-top: 22px; border-left: 6px solid var(--text-primary); }
   #reveal p { font-size: 20px; line-height: 1.5; margin: 0; }
   [hidden] { display: none !important; }
-  @media (max-width: 1000px) { #join, .grid2 { grid-template-columns: 1fr; } .rulegrid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 1000px) { #join, .grid2 { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Round 2 <span class="muted-h">· Draw for the judges</span></h1>
+  <h1>Round 2 <span class="muted-h">· Find the hidden rule</span></h1>
   <div class="session">
     Session <code id="runCode"></code>
     <button class="btn" id="newCode" title="Start a fresh session (e.g. a second section today)">New code</button>
   </div>
   <div class="tabs" role="tablist">
     <button role="tab" data-view="join" aria-selected="true">Join</button>
-    <button role="tab" data-view="curve" aria-selected="false">Learning curve</button>
-    <button role="tab" data-view="gallery" aria-selected="false">Gallery</button>
+    <button role="tab" data-view="players" aria-selected="false">Players</button>
+    <button role="tab" data-view="summary" aria-selected="false">Summary</button>
   </div>
   <button class="btn" id="revealBtn">Reveal the rules</button>
   <div class="spacer"></div>
@@ -96,46 +102,44 @@
   <span class="status" id="status"></span>
 </header>
 
-<!-- ======================= JOIN ======================= -->
 <section id="join">
   <div class="card qr" id="qr" aria-label="QR code to join round 2"></div>
   <div class="join-text">
-    <h2>Teams of two:<br>one phone, scan to join</h2>
-    <p>Your team will be paired with another team. One team draws, the other judges with a secret rule.</p>
+    <h2>Round 2:<br>scan to play</h2>
+    <p>Place a + and an = and the computer says ✓ or ✗. Find your secret rule in 10 tries.</p>
     <div class="url" id="joinUrl"></div>
     <div class="tiles">
-      <div class="card tile"><div class="n" id="tTeams">0</div><div class="lbl">teams joined</div></div>
-      <div class="card tile"><div class="n" id="tJudged">0</div><div class="lbl">drawings judged</div></div>
-      <div class="card tile"><div class="n" id="tWins">0</div><div class="lbl">pairs with 3 yes in a row</div></div>
+      <div class="card tile"><div class="n" id="tPlayers">0</div><div class="lbl">players</div></div>
+      <div class="card tile"><div class="n" id="tTries">0</div><div class="lbl">tries so far</div></div>
+      <div class="card tile"><div class="n" id="tWins">0</div><div class="lbl">found it (3 ✓ in a row)</div></div>
     </div>
   </div>
 </section>
 
-<!-- ======================= LEARNING CURVE ======================= -->
-<section id="curve" hidden>
+<section id="players" hidden>
+  <p class="note">Everyone's latest try and their ✓ / ✗ so far. Rules stay hidden until you reveal them.</p>
+  <div class="pgrid" id="pgrid"></div>
+</section>
+
+<section id="summary" hidden>
+  <div class="tiles" id="sumTiles" style="margin-bottom:22px"></div>
   <div class="grid2">
     <div class="card">
-      <h2>Learning from yes and no</h2>
-      <p class="sub">Share of drawings the judges accepted, by attempt number, across all pairs</p>
+      <h2>Learning from ✓ and ✗</h2>
+      <p class="sub">Share of tries that got a ✓, by try number, across everyone</p>
       <div id="chart"></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:22px">
-      <div class="card">
-        <h2>So far</h2>
-        <div id="stats"></div>
-      </div>
-      <div class="card">
-        <h2>What the generators think the rule is</h2>
-        <ul class="guesses" id="guesses"></ul>
-      </div>
+    <div class="card">
+      <h2>Where the = landed, relative to the +</h2>
+      <p class="sub">The + is at the centre of each square; every dot is one try</p>
+      <div class="scatters" id="scatters"></div>
+      <div class="legend"><span><i style="background:#0c7a37"></i>✓ accepted</span><span><i style="background:#b42b2a"></i>✗ rejected</span></div>
     </div>
   </div>
-</section>
-
-<!-- ======================= GALLERY ======================= -->
-<section id="gallery" hidden>
-  <p class="gal-note">Each square stacks every drawing on top of each other. Dark areas are where many drawings put ink.</p>
-  <div class="rulegrid" id="rulegrid"></div>
+  <div class="card" style="margin-top:22px">
+    <h2>What players think the rule is</h2>
+    <ul class="guesses" id="guesses"></ul>
+  </div>
 </section>
 
 <div class="card" id="reveal" hidden><p id="revealText"></p></div>
@@ -174,9 +178,8 @@
   let run = loadRun();
 
   function studentUrl() {
-    const u = new URL('draw.html', location.href);
-    u.search = '';
-    u.searchParams.set('run', run);
+    const u = new URL('place.html', location.href);
+    u.search = ''; u.searchParams.set('run', run);
     if (DEMO) u.searchParams.set('demo', '1');
     return u.toString();
   }
@@ -187,10 +190,7 @@
     const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
     $('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true, alt: 'QR code: ' + url });
   }
-  function switchRun(next) {
-    run = next; stats = null; gallery = null; demo = null;
-    renderJoin(); renderStats(); renderGallery(); poll(); if (view === 'gallery') loadGallery();
-  }
+  function switchRun(next) { run = next; data = null; demo = null; demoStart = Date.now(); renderJoin(); render(); poll(); }
 
   let confirmTimer = null;
   $('newCode').addEventListener('click', function () {
@@ -203,211 +203,170 @@
     clearTimeout(confirmTimer); b.classList.remove('warn'); b.textContent = 'New code';
     const next = nextRun(run); saveRun(next); switchRun(next);
   });
-  // Other copies of these pages (other slides, other tabs) changed the code: follow them.
+  // Other copies of the instructor pages (other slides, other tabs) changed the code: follow them.
   window.addEventListener('storage', (e) => { if (e.key === 'gvd-run') { const n = loadRun(); if (n !== run) switchRun(n); } });
 
   // ---------------- Tabs + reveal ----------------
-  let view = 'join';
   function setView(v) {
-    view = v;
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
-    ['join', 'curve', 'gallery'].forEach((x) => { $(x).hidden = x !== v; });
-    if (v === 'gallery') loadGallery();
+    ['join', 'players', 'summary'].forEach((x) => { $(x).hidden = x !== v; });
   }
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+  let revealed = false;
   $('revealText').textContent = R.revealText;
   $('revealBtn').addEventListener('click', function () {
-    $('reveal').hidden = !$('reveal').hidden;
-    this.textContent = $('reveal').hidden ? 'Reveal the rules' : 'Hide the rules';
+    revealed = !revealed;
+    $('reveal').hidden = !revealed;
+    this.textContent = revealed ? 'Hide the rules' : 'Reveal the rules';
+    render();
   });
 
-  // ---------------- Analysis ----------------
-  function analyse(s) {
-    const byPair = {};
-    s.drawings.forEach((d) => { (byPair[d.pair] = byPair[d.pair] || []).push(d); });
-    let wins = 0;
-    const toWin = [];
-    Object.keys(byPair).forEach((p) => {
-      const ds = byPair[p].sort((a, b) => a.attempt - b.attempt);
-      let run = 0;
-      for (const d of ds) {
-        run = d.verdict === 'yes' ? run + 1 : 0;
-        if (run === R.winStreak) { wins++; toWin.push(d.attempt); break; }
-      }
-    });
-    const maxA = s.drawings.reduce((m, d) => Math.max(m, d.attempt), 0);
-    const curve = [];
-    for (let a = 1; a <= Math.min(maxA, 20); a++) {
-      const at = s.drawings.filter((d) => d.attempt === a);
-      curve.push({ attempt: a, n: at.length, yes: at.filter((d) => d.verdict === 'yes').length });
-    }
-    toWin.sort((a, b) => a - b);
-    const median = toWin.length ? toWin[Math.floor((toWin.length - 1) / 2)] : null;
-    return { wins: wins, curve: curve, median: median, pairs: (s.pairs || []).length, judged: s.drawings.length };
+  function wonAt(atts) {
+    let s = 0;
+    for (let i = 0; i < atts.length; i++) { s = atts[i].v === 'yes' ? s + 1 : 0; if (s === R.winStreak) return i + 1; }
+    return null;
   }
 
   // ---------------- Rendering ----------------
-  let stats = null, gallery = null;
+  let data = null;
 
-  function renderStats() {
-    const s = stats || { teams: 0, pairs: [], drawings: [], guesses: [] };
-    const a = analyse(s);
-    $('tTeams').textContent = s.teams;
-    $('tJudged').textContent = a.judged;
-    $('tWins').textContent = a.wins;
+  function render() {
+    const recs = (data && data.records) || [];
+    const players = (data && data.players) || 0;
+    const tries = recs.reduce((n, r) => n + r.attempts.length, 0);
+    const wins = recs.map((r) => wonAt(r.attempts)).filter((x) => x != null).sort((a, b) => a - b);
+    $('tPlayers').textContent = players;
+    $('tTries').textContent = tries;
+    $('tWins').textContent = wins.length;
 
-    if (!a.curve.length) {
-      $('chart').innerHTML = '<p class="empty">Waiting for the first verdicts…</p>';
+    // Players grid
+    $('pgrid').innerHTML = recs.length ? recs.slice().sort((a, b) => a.player - b.player).map((r) => {
+      const w = wonAt(r.attempts), last = r.attempts[r.attempts.length - 1];
+      const st = w ? '✓ found it in ' + w : r.attempts.length >= R.maxAttempts ? 'out of tries'
+               : r.attempts.length ? 'try ' + (r.attempts.length + 1) + ' of ' + R.maxAttempts : 'just joined';
+      const board = '<svg class="board ' + (last ? (last.v === 'yes' ? 'y' : 'n') : '') + '" viewBox="0 0 100 100">' +
+        (last ? '<text class="g" x="' + last.px * 100 + '" y="' + last.py * 100 + '">+</text>' +
+                '<text class="g" x="' + last.ex * 100 + '" y="' + last.ey * 100 + '">=</text>' : '') + '</svg>';
+      const slots = Array.from({ length: R.maxAttempts }, (_, i) => {
+        const a = r.attempts[i];
+        return '<div class="slot ' + (a ? (a.v === 'yes' ? 'y' : 'n') : '') + '"></div>';
+      }).join('');
+      return '<div class="card pc"><div class="top"><span class="name">#' + r.player + '</span>' +
+        '<span class="st' + (w ? ' won' : '') + '">' + st + '</span></div>' +
+        (revealed ? '<div class="rule">' + esc(R.rules[r.rule].short) + '</div>' : '') +
+        board + '<div class="slots">' + slots + '</div></div>';
+    }).join('') : '<p class="empty">Nobody has played yet.</p>';
+
+    // Summary tiles
+    const tile = (n, l) => '<div class="card tile"><div class="n">' + n + '</div><div class="lbl">' + l + '</div></div>';
+    $('sumTiles').innerHTML = tile(players, 'players') + tile(tries, 'tries') + tile(wins.length, 'found the rule') +
+      tile(wins.length ? wins[Math.floor((wins.length - 1) / 2)] : '—', 'typical tries to find it');
+
+    // Learning curve
+    const maxA = Math.min(R.maxAttempts, recs.reduce((m, r) => Math.max(m, r.attempts.length), 0));
+    if (!maxA) {
+      $('chart').innerHTML = '<p class="empty">Waiting for the first tries…</p>';
     } else {
-      const grid = [0, 25, 50, 75, 100].map((p) => '<div class="gridline" style="bottom:' + p + '%"></div>').join('');
-      const bars = a.curve.map((c) => {
+      const curve = [];
+      for (let a = 1; a <= maxA; a++) {
+        const at = recs.map((r) => r.attempts[a - 1]).filter(Boolean);
+        curve.push({ a: a, n: at.length, yes: at.filter((x) => x.v === 'yes').length });
+      }
+      const grid = [0, 25, 75, 100].map((p) => '<div class="gridline" style="bottom:' + p + '%"></div>').join('');
+      const bars = curve.map((c) => {
         const pct = c.n ? c.yes / c.n : 0;
-        return '<div class="bar" style="height:' + (pct * 100) + '%" title="Attempt ' + c.attempt + ': ' + c.yes + ' of ' + c.n + ' accepted">' +
+        return '<div class="bar" style="height:' + pct * 100 + '%" title="Try ' + c.a + ': ' + c.yes + ' of ' + c.n + ' got ✓">' +
                '<span class="v">' + Math.round(pct * 100) + '%</span></div>';
       }).join('');
-      const xl = a.curve.map((c) => '<div>#' + c.attempt + '<br>n=' + c.n + '</div>').join('');
       $('chart').innerHTML =
         '<div class="chart"><div class="yaxis"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div>' +
-        '<div class="plot">' + grid + '<div class="bars">' + bars + '</div></div>' +
-        '<div class="xlabels">' + xl + '</div><div class="xtitle">Attempt number (n = pairs that got that far)</div></div>';
+        '<div class="plot">' + grid + '<div class="chance" style="bottom:50%"><span>random placing ≈ 50%</span></div>' +
+        '<div class="bars">' + bars + '</div></div>' +
+        '<div class="xlabels">' + curve.map((c) => '<div>#' + c.a + '<br>n=' + c.n + '</div>').join('') + '</div>' +
+        '<div class="xtitle">Try number (n = players who got that far)</div></div>';
     }
 
-    $('stats').innerHTML =
-      '<div class="stat"><span>Pairs</span><b>' + a.pairs + '</b></div>' +
-      '<div class="stat"><span>Drawings judged</span><b>' + a.judged + '</b></div>' +
-      '<div class="stat"><span>Pairs with ' + R.winStreak + ' yes in a row</span><b>' + a.wins + '</b></div>' +
-      '<div class="stat"><span>Typical attempts to get there</span><b>' + (a.median == null ? '—' : a.median) + '</b></div>';
-
-    const ruleOf = {};
-    (s.pairs || []).forEach((p) => { ruleOf[p.pair] = p.rule; });
-    $('guesses').innerHTML = s.guesses.length
-      ? s.guesses.map((g) => '<li><span class="who">Pair ' + g.pair + ' · judges had: ' +
-          esc((R.rules[ruleOf[g.pair]] || {}).short || '?') + '</span>' + esc(g.guess) + '</li>').join('')
-      : '<li class="empty">No guesses yet. Pairs are asked after ' + R.winStreak + ' yes in a row.</li>';
-  }
-
-  function renderGallery() {
-    const ds = (gallery && gallery.drawings) || [];
-    $('rulegrid').innerHTML = RULE_ORDER.map((r) => {
-      const mine = ds.filter((d) => d.rule === r);
-      const yes = mine.filter((d) => d.verdict === 'yes').length;
-      return '<div class="card rulecol"><h3>' + esc(R.rules[r].short) + '<span class="cnt">' + mine.length + ' drawings</span></h3>' +
-        '<div class="overlay-pair">' +
-          '<div class="ov y"><canvas width="300" height="300" data-rule="' + r + '" data-v="yes"></canvas>✓ accepted (' + yes + ')</div>' +
-          '<div class="ov n"><canvas width="300" height="300" data-rule="' + r + '" data-v="no"></canvas>✗ rejected (' + (mine.length - yes) + ')</div>' +
-        '</div><div class="thumbs">' +
-        mine.slice().reverse().slice(0, 16).map((d) => '<img class="' + (d.verdict === 'yes' ? 'y' : 'n') + '" src="' + d.img +
-          '" title="Pair ' + d.pair + ', attempt ' + d.attempt + ': ' + d.verdict + '" alt="">').join('') +
-        '</div></div>';
+    // Where the = landed relative to the +, one square per rule
+    $('scatters').innerHTML = RULE_ORDER.map((rule, k) => {
+      const pts = [];
+      recs.filter((r) => r.rule === rule).forEach((r) => r.attempts.forEach((a) => pts.push(a)));
+      const dots = pts.map((a) => {
+        const x = 50 + (a.ex - a.px) * 50, y = 50 + (a.ey - a.py) * 50;
+        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.2" fill="' +
+               (a.v === 'yes' ? '#0c7a37' : '#b42b2a') + '" fill-opacity="' + (a.v === 'yes' ? .8 : .45) + '"/>';
+      }).join('');
+      const label = revealed ? esc(R.rules[rule].short) : 'Rule ' + (k + 1);
+      return '<div class="sc"><svg viewBox="0 0 100 100">' +
+        '<line x1="50" y1="0" x2="50" y2="100" stroke="#e2e1dc"/><line x1="0" y1="50" x2="100" y2="50" stroke="#e2e1dc"/>' +
+        dots + '<text class="g" x="50" y="50" style="font-size:14px">+</text></svg>' + label +
+        ' <span class="muted">(' + pts.length + ')</span></div>';
     }).join('');
 
-    // Stack each group's drawings: multiply blending makes shared ink darker.
-    document.querySelectorAll('#rulegrid canvas').forEach((cv) => {
-      const group = ds.filter((d) => d.rule === cv.dataset.rule && d.verdict === cv.dataset.v);
-      const ctx = cv.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-      if (!group.length) return;
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.globalAlpha = Math.min(0.6, Math.max(0.08, 2.5 / group.length));
-      group.forEach((d) => {
-        const im = new Image();
-        im.onload = () => ctx.drawImage(im, 0, 0, cv.width, cv.height);
-        im.src = d.img;
-      });
-    });
+    // Guesses
+    const gs = recs.filter((r) => r.guess);
+    $('guesses').innerHTML = gs.length ? gs.map((r) => '<li><span class="who">#' + r.player +
+        (revealed ? ' · rule: ' + esc(R.rules[r.rule].short) : '') + '</span>' + esc(r.guess) + '</li>').join('')
+      : '<li class="empty">No guesses yet. Players are asked when they finish.</li>';
   }
 
   // ---------------- Data ----------------
-  let lastOk = 0, inFlight = false, galleryAt = 0;
+  let lastOk = 0, inFlight = false;
   function setStatus(t, err) { $('status').textContent = t; $('status').classList.toggle('err', !!err); }
-
   function poll() {
-    if (DEMO) { stats = demoData().stats; renderStats(); setStatus('Demo'); return; }
+    if (DEMO) { data = demoData(); render(); setStatus('Demo'); return; }
     if (inFlight) return;
     inFlight = true;
     const thisRun = run;
-    fetch(cfg.scriptUrl + '?action=r2stats&run=' + encodeURIComponent(thisRun))
+    fetch(cfg.scriptUrl + '?action=all&round=r2&run=' + encodeURIComponent(thisRun))
       .then((r) => r.json())
-      .then((d) => {
-        if (!d.ok) throw new Error(d.error || 'bad response');
-        if (thisRun !== run) return;
-        stats = d; lastOk = Date.now(); renderStats(); setStatus('Live');
-      })
+      .then((d) => { if (!d.ok) throw new Error(d.error || 'bad response'); if (thisRun !== run) return; data = d; lastOk = Date.now(); render(); setStatus('Live'); })
       .catch((e) => setStatus('Can’t reach the sheet: ' + e.message, true))
       .finally(() => { inFlight = false; });
   }
-
-  function loadGallery() {
-    galleryAt = Date.now();
-    if (DEMO) { gallery = demoData().gallery; renderGallery(); return; }
-    const thisRun = run;
-    fetch(cfg.scriptUrl + '?action=r2gallery&run=' + encodeURIComponent(thisRun))
-      .then((r) => r.json())
-      .then((d) => { if (d.ok && thisRun === run) { gallery = d; renderGallery(); } })
-      .catch(() => {});
-  }
-
-  setInterval(function () {
+  setInterval(() => {
     if (document.hidden) return;
     poll();
-    if (view === 'gallery' && Date.now() - galleryAt > 15000) loadGallery();   // images are heavier: refresh less often
     if (!DEMO && lastOk && Date.now() - lastOk > POLL_MS * 3) setStatus('Last update ' + Math.round((Date.now() - lastOk) / 1000) + 's ago', true);
   }, POLL_MS);
 
-  // ---------------- Demo data (no backend needed) ----------------
-  // Ten pairs who slowly learn their direction; the judges are occasionally wrong.
-  let demo = null;
+  // ---------------- Demo data: a class of 24 that fills in over ~40 seconds ----------------
+  let demo = null, demoStart = Date.now();
   function demoData() {
-    if (demo) return demo;
-    let seed = 11;
-    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const cv = document.createElement('canvas'); cv.width = cv.height = 200;
-    const x = cv.getContext('2d');
-    function drawing(px, py, ex, ey, hasEq) {
-      x.fillStyle = '#fff'; x.fillRect(0, 0, 200, 200);
-      x.strokeStyle = '#111'; x.lineWidth = 6; x.lineCap = 'round';
-      const s = 12 + rnd() * 10;
-      x.beginPath(); x.moveTo(px - s, py); x.lineTo(px + s, py); x.moveTo(px, py - s); x.lineTo(px, py + s);
-      if (hasEq) { x.moveTo(ex - s, ey - 6); x.lineTo(ex + s, ey - 6); x.moveTo(ex - s, ey + 6); x.lineTo(ex + s, ey + 6); }
-      x.stroke();
-      return cv.toDataURL('image/png');
+    if (!demo) {
+      let seed = 5;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const dirs = { above: [0, -1], below: [0, 1], left: [-1, 0], right: [1, 0] };
+      const guessText = { above: 'the = has to be higher than the +', below: 'equals goes under the plus',
+                          left: 'the = is on the left', right: '= to the right of +' };
+      demo = Array.from({ length: 24 }, (_, i) => {
+        const rule = RULE_ORDER[(i + 2) % 4], atts = [];
+        let knows = false, streak = 0;
+        for (let k = 0; k < R.maxAttempts && streak < R.winStreak; k++) {
+          const px = .2 + rnd() * .6, py = .2 + rnd() * .6;
+          let ex, ey;
+          if (knows) { const d = dirs[rule]; ex = px + d[0] * (.15 + rnd() * .2) + (rnd() - .5) * .25; ey = py + d[1] * (.15 + rnd() * .2) + (rnd() - .5) * .25; }
+          else { ex = .1 + rnd() * .8; ey = .1 + rnd() * .8; }
+          const a = { px: px, py: py, ex: Math.min(.94, Math.max(.06, ex)), ey: Math.min(.94, Math.max(.06, ey)) };
+          a.v = R.rules[rule].test(a) ? 'yes' : 'no';
+          atts.push(a);
+          streak = a.v === 'yes' ? streak + 1 : 0;
+          if (!knows && rnd() < 0.35) knows = true;
+        }
+        return { player: i + 1, rule: rule, attempts: atts, guess: streak >= R.winStreak && i % 3 ? guessText[rule] : null };
+      });
     }
-    const offsets = { above: [0, -1], below: [0, 1], left: [-1, 0], right: [1, 0] };
-    const pairs = [], drawings = [], guesses = [];
-    for (let p = 1; p <= 10; p++) {
-      const rule = RULE_ORDER[(p + 1) % 4];
-      pairs.push({ pair: p, rule: rule, hasJudge: true });
-      let streak = 0;
-      for (let a = 1; a <= 14; a++) {
-        const learned = rnd() < 0.15 + 0.75 * (1 - Math.exp(-(a - 1) / 3));
-        const px = 50 + rnd() * 100, py = 50 + rnd() * 100;
-        let dx, dy;
-        if (learned) { const o = offsets[rule]; dx = o[0] * (40 + rnd() * 30) + (rnd() - .5) * 30; dy = o[1] * (40 + rnd() * 30) + (rnd() - .5) * 30; }
-        else { const ang = rnd() * Math.PI * 2; dx = Math.cos(ang) * 60; dy = Math.sin(ang) * 60; }
-        const ex = Math.max(25, Math.min(175, px + dx)), ey = Math.max(25, Math.min(175, py + dy));
-        const hasEq = rnd() > 0.06;
-        const ok = hasEq && ({ above: ey < py - 10, below: ey > py + 10, left: ex < px - 10, right: ex > px + 10 })[rule];
-        const verdict = (rnd() < 0.05 ? !ok : ok) ? 'yes' : 'no';
-        drawings.push({ pair: p, rule: rule, attempt: a, verdict: verdict, img: drawing(px, py, ex, ey, hasEq) });
-        streak = verdict === 'yes' ? streak + 1 : 0;
-        if (streak === R.winStreak) break;
-      }
-      if (streak === R.winStreak && p % 3 !== 0) {
-        guesses.push({ pair: p, guess: ({ above: 'The = has to be higher than the +', below: 'the equals goes under the plus',
-                                         left: 'equals sign first, then the plus (like reading)', right: 'plus on the left side' })[rule] });
-      }
-    }
-    demo = { stats: { teams: 20, pairs: pairs, drawings: drawings.map(({ img, ...d }) => d), guesses: guesses },
-             gallery: { drawings: drawings } };
-    return demo;
+    const t = (Date.now() - demoStart) / 1000;
+    const shown = demo.slice(0, Math.min(24, Math.floor(t * 1.5) + 4)).map((r) => {
+      const n = Math.min(r.attempts.length, Math.floor(t / 3.5));
+      return Object.assign({}, r, { attempts: r.attempts.slice(0, n), guess: n === r.attempts.length ? r.guess : null });
+    });
+    return { players: shown.length, records: shown };
   }
 
-  // ---------------- Start ----------------
   $('demoFlag').hidden = !DEMO;
-  renderJoin();
-  renderStats();
+  renderJoin(); render();
   const v = params.get('view');
-  if (v === 'curve' || v === 'gallery') setView(v);
+  if (v === 'players' || v === 'summary') setView(v);
   poll();
 })();
 </script>

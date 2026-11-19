@@ -1,82 +1,49 @@
 // Run from the repo root: node tests/test-round2.js
 const assert = require('assert');
 const { loadCodeGs } = require('./fake-gas');
+const RULES = ['above', 'below', 'left', 'right'];
 const G = loadCodeGs();
 const run = '2026-11-19';
-const img = 'data:image/png;base64,' + 'A'.repeat(4000);
+const join = (c) => G.post({ action: 'join', round: 'r2', run, client: c });
+const put = (c, record) => G.post({ action: 'put', round: 'r2', run, client: c, record });
 
-// Teams alternate generator / judge in order of arrival.
-const join = (c) => G.post({ action: 'r2join', run, client: c });
-assert.deepStrictEqual([join('t1'), join('t2'), join('t3')].map((r) => r.role + r.pair),
-                       ['generator1', 'discriminator1', 'generator2']);
-assert.strictEqual(join('t1').role, 'generator', 'rejoining keeps the role');
-assert.strictEqual(join('t3').pair, 2);
+// Rules rotate through all four, then repeat; rejoining keeps the rule.
+const rules = Array.from({ length: 8 }, (_, i) => join('p' + i).rule);
+assert.deepStrictEqual(rules.slice(0, 4).slice().sort(), RULES.slice().sort());
+assert.deepStrictEqual(rules.slice(4), rules.slice(0, 4));
+assert.strictEqual(join('p2').rule, rules[2]);
+assert.strictEqual(join('p2').player, 3);
 
-// Only the judges are told their pair's rule; rules rotate through all four directions.
-const RULES = ['above', 'below', 'left', 'right'];
-assert(RULES.includes(G.get({ action: 'r2state', run, client: 't2' }).rule), 'judge sees the rule');
-assert.strictEqual(G.get({ action: 'r2state', run, client: 't1' }).rule, undefined, 'generator does not');
-{ const H = loadCodeGs(); const seen = [];
-  for (let i = 0; i < 16; i++) H.post({ action: 'r2join', run: 'rot', client: 'c' + i });
-  for (let i = 1; i < 16; i += 2) seen.push(H.get({ action: 'r2state', run: 'rot', client: 'c' + i }).rule);
-  assert.deepStrictEqual(seen.slice(0, 4).sort(), RULES.slice().sort(), 'first four pairs get four different rules');
-  assert.deepStrictEqual(seen.slice(4), seen.slice(0, 4), 'then the rotation repeats'); }
+// Saving progress.
+const a = (px, py, ex, ey, v) => ({ px, py, ex, ey, v });
+assert(put('p0', { rule: rules[0], attempts: [a(.5, .5, .5, .8, 'no')] }).ok);
+assert(put('p0', { rule: rules[0], attempts: [a(.5, .5, .5, .8, 'no'), a(.4, .4, .4, .1, 'yes')], guess: 'the = goes up' }).ok);
+assert(put('p1', { rule: rules[1], attempts: [a(.2, .2, .9, .9, 'yes')] }).ok);
+assert(!put('p1', { rule: 'diagonal', attempts: [] }).ok, 'unknown rule');
+assert(!put('p1', { rule: rules[1], attempts: [a(2, .2, .9, .9, 'yes')] }).ok, 'position off the board');
+assert(!put('p1', { rule: rules[1], attempts: [a(.2, .2, .9, .9, 'maybe')] }).ok, 'bad verdict');
+assert.strictEqual(put('p1', { rule: rules[1], attempts: Array(15).fill(a(.1, .1, .2, .2, 'no')) }).ok, true);
 
-// Pair 2 has no judge yet.
-assert.strictEqual(G.get({ action: 'r2state', run, client: 't3' }).partner, false);
-assert.strictEqual(G.get({ action: 'r2state', run, client: 't1' }).partner, true);
+const all = G.get({ action: 'all', round: 'r2', run });
+assert.strictEqual(all.players, 8);
+assert.strictEqual(all.records.length, 2, 'only players who saved something');
+const r0 = all.records.find((r) => r.player === 1);
+assert.strictEqual(r0.attempts.length, 2); assert.strictEqual(r0.guess, 'the = goes up');
+assert.strictEqual(all.records.find((r) => r.player === 2).attempts.length, 10, 'capped at 10');
 
-// Generator draws; judge sees it; judge says no; generator sees the verdict.
-assert.strictEqual(G.post({ action: 'r2draw', run, client: 't1', img }).attempt, 1);
-assert.strictEqual(G.post({ action: 'r2draw', run, client: 't1', img }).already, true, 'no second drawing while waiting');
-let judge = G.get({ action: 'r2state', run, client: 't2' });
-assert.strictEqual(judge.pending, true); assert.strictEqual(judge.img, img);
-assert(!G.post({ action: 'r2judge', run, client: 't1', attempt: 1, verdict: 'yes' }).ok, 'generator cannot judge');
-assert(!G.post({ action: 'r2draw', run, client: 't2', img }).ok, 'judge cannot draw');
-assert(G.post({ action: 'r2judge', run, client: 't2', attempt: 1, verdict: 'no' }).ok);
-assert.strictEqual(G.post({ action: 'r2judge', run, client: 't2', attempt: 1, verdict: 'yes' }).stale, true, 'double tap ignored');
-let gen = G.get({ action: 'r2state', run, client: 't1' });
-assert.strictEqual(gen.pending, false); assert.deepStrictEqual(gen.verdicts, ['no']);
+// Archive: each attempt and guess copied once.
+G.get({ action: 'all', round: 'r2', run });
+assert(put('p0', { rule: rules[0], attempts: [a(.5, .5, .5, .8, 'no'), a(.4, .4, .4, .1, 'yes'), a(.3, .6, .3, .2, 'yes')], guess: 'the = goes up' }).ok);
+G.get({ action: 'all', round: 'r2', run });
+const rows = G.sheets.Placements.rows.slice(1);
+assert.strictEqual(rows.length, 3 + 10, 'p0: 3 attempts, p1: 10 attempts, no duplicates');
+assert.deepStrictEqual(rows.filter((r) => r[2] === 1).map((r) => r[4]), [1, 2, 3]);
+assert.strictEqual(G.sheets['Placement guesses'].rows.length, 2, 'header + one guess');
 
-// Three more rounds, then a guess.
-for (const v of ['yes', 'yes', 'yes']) {
-  const a = G.post({ action: 'r2draw', run, client: 't1', img }).attempt;
-  G.post({ action: 'r2judge', run, client: 't2', attempt: a, verdict: v });
-}
-assert(G.post({ action: 'r2guess', run, client: 't1', guess: 'the = goes under the +' }).ok);
-assert(!G.post({ action: 'r2draw', run, client: 't1', img: 'data:text/html,hi' }).ok, 'only PNG drawings');
-
-// Gallery images come from the cache.
-{ const gal = G.get({ action: 'r2gallery', run });
-  assert.strictEqual(gal.drawings.length, 4); assert.strictEqual(gal.drawings[0].img, img);
-  assert(RULES.includes(gal.drawings[0].rule)); }
-
-// The results page's polling copies everything into the sheet, once, with images.
-G.get({ action: 'r2stats', run }); G.dropCache(); G.get({ action: 'r2stats', run });
-{ const rows = G.sheets.Drawings.rows.slice(1);
-  assert.strictEqual(rows.length, 4, 'four drawings archived exactly once');
-  assert.deepStrictEqual(rows.map((r) => r[5]), ['no', 'yes', 'yes', 'yes']);
-  assert.strictEqual(rows[0][6], img, 'image archived');
-  assert.strictEqual(G.sheets.Guesses.rows.slice(1).length, 1); }
-
-// State survives the cache being wiped (properties are the backup).
+// Everything survives the cache being wiped.
 G.dropCache();
-gen = G.get({ action: 'r2state', run, client: 't1' });
-assert.deepStrictEqual(gen.verdicts, ['no', 'yes', 'yes', 'yes']);
-assert.strictEqual(join('t4').pair, 2, 'counter survives the cache wipe');
-
-// Results endpoints.
-const stats = G.get({ action: 'r2stats', run });
-assert.strictEqual(stats.teams, 4);
-assert.deepStrictEqual(stats.drawings.map((d) => d.verdict), ['no', 'yes', 'yes', 'yes']);
-assert.strictEqual(stats.guesses[0].guess, 'the = goes under the +');
-assert.strictEqual(stats.pairs.length, 2); assert(RULES.includes(stats.drawings[0].rule));
-assert.strictEqual(stats.pairs[0].rule, stats.drawings[0].rule);
-// (Images live only in the cache, so after the wipe above the gallery has none; the sheet keeps them.)
-assert.strictEqual(G.get({ action: 'r2stats', run: 'other' }).drawings.length, 0, 'sessions are separate');
-
-// Round 1 still works alongside.
-assert(G.post({ run, role: 'generator', client: 'x', difficulty: 3, data: ['kana'] }).ok);
-assert.strictEqual(G.get({ action: 'rows', run }).rows.length, 1);
-
+assert.strictEqual(G.get({ action: 'all', round: 'r2', run }).records.length, 2);
+assert.strictEqual(join('p9').player, 9);
+assert.strictEqual(G.get({ action: 'all', round: 'r2', run: 'other' }).records.length, 0, 'sessions are separate');
+assert.strictEqual(G.get({}).version.length > 0, true);
 console.log('round 2 backend tests passed');

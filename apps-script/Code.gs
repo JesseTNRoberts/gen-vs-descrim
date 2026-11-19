@@ -6,41 +6,41 @@
  * then Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
  * Put the /exec URL in config.js. Nothing else to run.
  * After changing this file: Deploy → Manage deployments → ✏ → Version: New version → Deploy
- * (keeps the same URL).
+ * (keeps the same URL). Open the /exec URL to see which version is live.
  *
- * Round 1 (words):
- *   POST {run, role, client, difficulty, data}     → one row in the "Responses" tab
- *   GET  ?action=rows&run=CODE                     → that session's answers
+ * Every student device keeps one small record per round, stored in the script cache
+ * (fast, no daily quota) and mirrored to script properties (durable):
  *
- * Round 2 (drawings; teams are paired generator/judge in order of arrival, and each pair's
- * judges get one of four rules, handed out in a shuffled rotation):
- *   POST {action:'r2join',  run, client}            → {role, pair}
- *   POST {action:'r2draw',  run, client, img}       → generator sends a drawing (PNG data URL)
- *   POST {action:'r2judge', run, client, attempt, verdict:'yes'|'no'}
- *   POST {action:'r2guess', run, client, guess}     → generator's guess at the rule
- *   GET  ?action=r2state&run=CODE&client=ID         → that team's live state (polled)
- *   GET  ?action=r2stats&run=CODE                   → verdicts and guesses, no images
- *   GET  ?action=r2gallery&run=CODE                 → every judged drawing, with images
+ *   POST {action:'join', round:'r2', run, client}       → {rule}  (round 2: assigns the hidden rule)
+ *   POST {action:'put',  round, run, client, record}    → saves that device's record
+ *   GET  ?action=all&round=r1|r2&run=CODE               → every record in that session
  *
- * Live round 2 state is kept in the script cache (fast, no daily quota) and mirrored to
- * script properties on every change, so nothing is lost if the cache drops an entry.
- * Drawings stay in the cache for six hours. The sheet is never touched while teams play:
- * the results page's polling copies new verdicts, drawings and guesses into the "Drawings"
- * and "Guesses" tabs in batches, as a permanent record.
- * All scoring and charts happen in the browser.
+ * Round 1 record: {role, difficulty, data}   (words or judgements; scored on the results page)
+ * Round 2 record: {rule, attempts:[{px,py,ex,ey,v}], guess}
+ *   px,py = where the + was placed, ex,ey = where the = was placed (0–1 across / down the board),
+ *   v = 'yes' | 'no' (the page judges each placement against the player's rule).
+ *
+ * Students' requests never touch the Sheet. The results pages' polling copies new records into
+ * the "Responses", "Placements" and "Placement guesses" tabs in batches, as a permanent record.
  */
 
-const SHEET_NAME = 'Responses';
-const HEADERS = ['Timestamp', 'Session', 'Role', 'Device', 'Difficulty', 'Answers'];
-const DRAW_SHEET = 'Drawings';
-const DRAW_HEADERS = ['Timestamp', 'Session', 'Pair', 'Rule', 'Attempt', 'Verdict', 'Drawing'];
-// Each pair's judges get one of these (the = must be above / below / left of / right of the +).
-const RULES = ['above', 'below', 'left', 'right'];
-const GUESS_SHEET = 'Guesses';
-const GUESS_HEADERS = ['Timestamp', 'Session', 'Pair', 'Guess'];
+const VERSION = '2026-11-19-everyone-plays';
 const SIX_HOURS = 21600;
-// Bump on every change, so it's easy to check which version a deployment is running (open the /exec URL).
-const VERSION = '2026-11-19-no-sheet-in-game';
+// Round 2 rules: the = must be above / below / left of / right of the +.
+const RULES = ['above', 'below', 'left', 'right'];
+
+const TABS = {
+  r1: { name: 'Responses', headers: ['Timestamp', 'Session', 'Role', 'Device', 'Difficulty', 'Answers'] },
+  r2: { name: 'Placements', headers: ['Timestamp', 'Session', 'Player', 'Rule', 'Attempt', 'Plus x', 'Plus y', 'Equals x', 'Equals y', 'Verdict'] },
+  r2guess: { name: 'Placement guesses', headers: ['Timestamp', 'Session', 'Player', 'Rule', 'Guess'] }
+};
+
+const K_ = {
+  record: (round, run, client) => 'rec:' + round + ':' + run + ':' + client,
+  index:  (round, run) => 'ix:' + round + ':' + run,         // device ids in arrival order
+  all:    (round, run) => 'all:' + round + ':' + run,        // 2-second cache of the "all" answer
+  logged: (round, run) => 'logged:' + round + ':' + run      // what has been copied to the sheet
+};
 
 // ===================================================================
 // Entry points
@@ -48,16 +48,13 @@ const VERSION = '2026-11-19-no-sheet-in-game';
 
 function doPost(e) {
   try {
-    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    switch (body.action) {
-      // Drawing and judging touch only their own pair's state, and the two teams take turns,
-      // so they don't hold the script-wide lock; only the brief sheet writes (and joining) do.
-      case 'r2join':  return json_(r2Join_(body));
-      case 'r2draw':  return json_(r2Draw_(body));
-      case 'r2judge': return json_(r2Judge_(body));
-      case 'r2guess': return json_(r2Guess_(body));
-      default:        return json_(withLock_(() => saveAnswers_(body)));
-    }
+    const b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const round = b.round === 'r2' ? 'r2' : b.round === 'r1' ? 'r1' : null;
+    if (!round) throw new Error('bad round');
+    const run = needRun_(b.run), client = needClient_(b.client);
+    if (b.action === 'join') return json_(join_(round, run, client));
+    if (b.action === 'put') return json_(put_(round, run, client, b.record));
+    throw new Error('bad action');
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
@@ -65,41 +62,85 @@ function doPost(e) {
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
-  const run = String(p.run || '').trim();
   try {
-    switch (p.action) {
-      case 'rows':      return json_({ ok: true, run: run, rows: rows_(run) });
-      case 'r2state':   return json_(r2State_(run, String(p.client || '')));
-      case 'r2stats':   return json_(r2Stats_(run));
-      case 'r2gallery': return json_(r2Gallery_(run));
-      default:          return json_({ ok: true, app: 'generator-vs-discriminator', version: VERSION });
+    if (p.action === 'all') {
+      const round = p.round === 'r2' ? 'r2' : 'r1';
+      return json_(all_(round, needRun_(p.run)));
     }
+    return json_({ ok: true, app: 'generator-vs-discriminator', version: VERSION });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
 }
 
 // ===================================================================
-// Round 1: words
+// Join, put, all
 // ===================================================================
 
-function saveAnswers_(body) {
-  const row = cleanSubmission_(body);
-  // The leading apostrophe keeps Sheets from turning "2026-11-19" into a date.
-  sheet_(SHEET_NAME, HEADERS).appendRow([new Date(), "'" + row.run, row.role, "'" + row.client,
-                                         row.difficulty, JSON.stringify(row.data)]);
-  CacheService.getScriptCache().remove('rows:' + row.run);
+/** Add a device to the session's list (once) and return its arrival number. */
+function enlist_(round, run, client) {
+  const key = K_.index(round, run);
+  const cached = getJ_(key) || [];
+  let i = cached.indexOf(client);
+  if (i >= 0) return i;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const list = JSON.parse(props.getProperty(key) || '[]');   // re-read the durable copy inside the lock
+    i = list.indexOf(client);
+    if (i < 0) { list.push(client); i = list.length - 1; putJ_(key, list); }
+    return i;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function join_(round, run, client) {
+  const i = enlist_(round, run, client);
+  const out = { ok: true, player: i + 1 };
+  if (round === 'r2') out.rule = ruleFor_(run, i + 1);
+  return out;
+}
+
+function put_(round, run, client, record) {
+  const rec = round === 'r1' ? cleanR1_(record) : cleanR2_(record);
+  enlist_(round, run, client);
+  putJ_(K_.record(round, run, client), rec);
+  CacheService.getScriptCache().remove(K_.all(round, run));
   return { ok: true };
 }
 
-/** Check and trim what a student page sent, so the sheet only ever holds tidy rows. */
-function cleanSubmission_(b) {
-  const run = short_(b.run, 40), client = short_(b.client, 40);
-  if (!run) throw new Error('missing session code');
+function all_(round, run) {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(K_.all(round, run));
+  let out;
+  if (hit) {
+    out = JSON.parse(hit);
+  } else {
+    const clients = getJ_(K_.index(round, run)) || [];
+    const recs = getAllJ_(clients.map((c) => K_.record(round, run, c)));
+    const records = [];
+    clients.forEach((c, i) => {
+      const r = recs[K_.record(round, run, c)];
+      if (r) records.push(Object.assign({ player: i + 1 }, r));
+    });
+    out = { ok: true, run: run, round: round, players: clients.length, records: records };
+    try { cache.put(K_.all(round, run), JSON.stringify(out), 2); } catch (err) {}
+  }
+  try { archive_(round, run, out.records); } catch (err) { /* catches up on the next poll */ }
+  return out;
+}
+
+// ===================================================================
+// Validation
+// ===================================================================
+
+function cleanR1_(b) {
+  b = b || {};
   if (b.role !== 'generator' && b.role !== 'discriminator') throw new Error('bad role');
   const difficulty = Math.round(Number(b.difficulty));
   if (!(difficulty >= 1 && difficulty <= 5)) throw new Error('bad difficulty');
-
   let data;
   if (b.role === 'generator') {
     if (!Array.isArray(b.data)) throw new Error('bad words');
@@ -112,73 +153,22 @@ function cleanSubmission_(b) {
       if (v === 'yes' || v === 'no') data[short_(k, 30)] = v;
     });
   }
-  return { run: run, role: b.role, client: client, difficulty: difficulty, data: data };
+  return { role: b.role, difficulty: difficulty, data: data };
 }
 
-/** One session's answers. If a device submitted twice, only its last answer counts. */
-function rows_(run) {
-  if (!run) throw new Error('missing session code');
-  const cache = CacheService.getScriptCache();
-  const hit = cache.get('rows:' + run);
-  if (hit) return JSON.parse(hit);
-
-  const values = sheet_(SHEET_NAME, HEADERS).getDataRange().getValues().slice(1);
-  const latest = {};
-  values.forEach(function (v, i) {
-    if (String(v[1]) !== run) return;
-    let data;
-    try { data = JSON.parse(v[5]); } catch (err) { return; }
-    const key = v[2] + '|' + (v[3] || ('row' + i));
-    latest[key] = { role: v[2], difficulty: Number(v[4]), data: data };
+function cleanR2_(b) {
+  b = b || {};
+  if (RULES.indexOf(b.rule) < 0) throw new Error('bad rule');
+  const num = (x) => { const n = Number(x); if (!(n >= 0 && n <= 1)) throw new Error('bad position'); return Math.round(n * 1000) / 1000; };
+  const attempts = (Array.isArray(b.attempts) ? b.attempts : []).slice(0, 10).map((a) => {
+    if (a.v !== 'yes' && a.v !== 'no') throw new Error('bad verdict');
+    return { px: num(a.px), py: num(a.py), ex: num(a.ex), ey: num(a.ey), v: a.v };
   });
-  const out = Object.keys(latest).map((k) => latest[k]);
-  try { cache.put('rows:' + run, JSON.stringify(out), 3); } catch (err) { /* too big; fine */ }
-  return out;
+  return { rule: b.rule, attempts: attempts, guess: short_(b.guess, 300) || null };
 }
 
-// ===================================================================
-// Round 2: drawings
-// ===================================================================
-
-const K_ = {
-  count:  (run) => 'r2n:' + run,                        // teams joined so far
-  team:   (run, client) => 'r2c:' + run + ':' + client, // {role, pair}
-  state:  (run, pair) => 'r2s:' + run + ':' + pair,     // {rule, attempt, pending, verdicts}
-  image:  (run, pair, attempt) => 'r2i:' + run + ':' + pair + ':' + attempt,
-  guess:  (run, pair) => 'r2g:' + run + ':' + pair,
-  stats:  (run) => 'r2stats:' + run
-};
-
-function r2Join_(b) {
-  const run = needRun_(b.run), client = needClient_(b.client);
-  const known = getJ_(K_.team(run, client));
-  if (known) return { ok: true, role: known.role, pair: known.pair };
-
-  // Hold the lock only long enough to take the next arrival number and record this team.
-  let team;
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
-  try {
-    const again = getJ_(K_.team(run, client));        // a retry that already got in
-    if (again) return { ok: true, role: again.role, pair: again.pair };
-    const props = PropertiesService.getScriptProperties();
-    const n = Number(props.getProperty(K_.count(run)) || 0);
-    props.setProperty(K_.count(run), String(n + 1));
-    team = { role: n % 2 === 0 ? 'generator' : 'discriminator', pair: Math.floor(n / 2) + 1 };
-    putJ_(K_.team(run, client), team);
-  } finally {
-    lock.releaseLock();
-  }
-  CacheService.getScriptCache().remove(K_.count(run));
-  if (team.role === 'generator') {
-    putJ_(K_.state(run, team.pair), { rule: ruleFor_(run, team.pair), attempt: 0, pending: false, verdicts: [] });
-  }
-  CacheService.getScriptCache().remove(K_.stats(run));
-  return { ok: true, role: team.role, pair: team.pair };
-}
-
-/** Pair p's rule: the four rules in an order shuffled once per session (seeded by the session code). */
-function ruleFor_(run, pair) {
+/** Player p's rule: the four rules in an order shuffled once per session (seeded by the session code). */
+function ruleFor_(run, player) {
   let seed = 0;
   for (let i = 0; i < run.length; i++) seed = (seed * 31 + run.charCodeAt(i)) % 2147483647;
   seed = seed || 1;
@@ -188,152 +178,50 @@ function ruleFor_(run, pair) {
     const j = seed % (i + 1);
     [order[i], order[j]] = [order[j], order[i]];
   }
-  return order[(pair - 1) % order.length];
+  return order[(player - 1) % order.length];
 }
 
-function r2State_(run, client) {
-  needRun_(run);
-  const team = getJ_(K_.team(run, client));
-  if (!team) return { ok: true, joined: false };
-  const teams = Number(getJ_(K_.count(run)) || 0);
-  const st = getJ_(K_.state(run, team.pair)) || { attempt: 0, pending: false, verdicts: [] };
-  const out = {
-    ok: true, joined: true, role: team.role, pair: team.pair,
-    partner: teams >= team.pair * 2,   // the judge team for this pair has arrived
-    attempt: st.attempt, pending: st.pending, verdicts: st.verdicts
-  };
-  if (team.role === 'discriminator') {
-    out.rule = st.rule;   // only the judges are told the rule
-    if (st.pending) out.img = CacheService.getScriptCache().get(K_.image(run, team.pair, st.attempt)) || null;
-  }
-  return out;
-}
+// ===================================================================
+// The permanent record in the Sheet (written from results-page polling only)
+// ===================================================================
 
-function r2Draw_(b) {
-  const run = needRun_(b.run), team = needTeam_(run, b.client, 'generator');
-  const img = String(b.img || '');
-  if (img.indexOf('data:image/png;base64,') !== 0 || img.length > 45000) throw new Error('bad drawing');
-  const key = K_.state(run, team.pair);
-  const st = getJ_(key) || { attempt: 0, pending: false, verdicts: [] };
-  if (st.pending) return { ok: true, attempt: st.attempt, already: true };  // a resend after a dropped reply
-  st.attempt += 1;
-  st.pending = true;
-  CacheService.getScriptCache().put(K_.image(run, team.pair, st.attempt), img, SIX_HOURS);
-  putJ_(key, st);
-  return { ok: true, attempt: st.attempt };
-}
-
-function r2Judge_(b) {
-  const run = needRun_(b.run), team = needTeam_(run, b.client, 'discriminator');
-  if (b.verdict !== 'yes' && b.verdict !== 'no') throw new Error('bad verdict');
-  const key = K_.state(run, team.pair);
-  const st = getJ_(key);
-  if (!st || !st.pending || Number(b.attempt) !== st.attempt) return { ok: true, stale: true };
-  st.pending = false;
-  st.verdicts.push(b.verdict);
-  putJ_(key, st);
-  CacheService.getScriptCache().remove(K_.stats(run));
-  return { ok: true, attempt: st.attempt };
-}
-
-function r2Guess_(b) {
-  const run = needRun_(b.run), team = needTeam_(run, b.client, 'generator');
-  const guess = short_(b.guess, 300);
-  if (!guess) throw new Error('empty guess');
-  putJ_(K_.guess(run, team.pair), guess);   // its own key, so it never races a verdict
-  CacheService.getScriptCache().remove(K_.stats(run));
-  return { ok: true };
-}
-
-/** Every pair's rule, verdicts and guess, read in one batch from the cache (properties as backup). */
-function r2Pairs_(run) {
-  const teams = Number(getJ_(K_.count(run)) || 0);
-  const n = Math.ceil(teams / 2), keys = [];
-  for (let p = 1; p <= n; p++) keys.push(K_.state(run, p), K_.guess(run, p));
-  const v = getAllJ_(keys);
-  const pairs = [];
-  for (let p = 1; p <= n; p++) {
-    const st = v[K_.state(run, p)];
-    if (st) pairs.push({ pair: p, rule: st.rule, hasJudge: teams >= p * 2, verdicts: st.verdicts, guess: v[K_.guess(run, p)] || null });
-  }
-  return { teams: teams, pairs: pairs };
-}
-
-/** Verdicts and guesses for the results page (no images, so it is cheap to poll). */
-function r2Stats_(run) {
-  needRun_(run);
-  const cache = CacheService.getScriptCache();
-  const hit = cache.get(K_.stats(run));
-  if (hit) return JSON.parse(hit);
-  const P = r2Pairs_(run);
-  const drawings = [], guesses = [];
-  P.pairs.forEach((p) => {
-    p.verdicts.forEach((v, i) => drawings.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: v }));
-    if (p.guess) guesses.push({ pair: p.pair, guess: p.guess });
-  });
-  const out = {
-    ok: true, run: run, teams: P.teams, drawings: drawings, guesses: guesses,
-    pairs: P.pairs.map((p) => ({ pair: p.pair, rule: p.rule, hasJudge: p.hasJudge }))
-  };
-  try { cache.put(K_.stats(run), JSON.stringify(out), 3); } catch (err) {}
-  try { archive_(run, P); } catch (err) { /* the record can catch up on the next poll */ }
-  return out;
-}
-
-/** Every judged drawing with its image, for the gallery. */
-function r2Gallery_(run) {
-  needRun_(run);
-  const P = r2Pairs_(run);
-  const keys = [];
-  P.pairs.forEach((p) => p.verdicts.forEach((v, i) => keys.push(K_.image(run, p.pair, i + 1))));
-  const imgs = CacheService.getScriptCache().getAll(keys);
-  const drawings = [];
-  P.pairs.forEach((p) => p.verdicts.forEach((v, i) => {
-    const img = imgs[K_.image(run, p.pair, i + 1)];
-    if (img) drawings.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: v, img: img });
-  }));
-  return { ok: true, run: run, drawings: drawings };
-}
-
-/**
- * Copy new verdicts and guesses into the Drawings and Guesses tabs, as a permanent record.
- * Called from the results page's polling, never from the students' requests, and skipped if
- * another copy is already writing, so the game never waits on the sheet.
- */
-function archive_(run, P) {
-  const logKey = 'r2logged:' + run;
+function archive_(round, run, records) {
+  const logKey = K_.logged(round, run);
+  const sig = (r) => round === 'r1' ? 1 : (r.attempts.length + '|' + (r.guess || ''));
   const logged = getJ_(logKey) || {};
-  const todo = [], gtodo = [];
-  P.pairs.forEach((p) => {
-    const done = (logged[p.pair] && logged[p.pair].d) || 0;
-    for (let i = done; i < p.verdicts.length; i++) todo.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: p.verdicts[i] });
-    if (p.guess && !(logged[p.pair] && logged[p.pair].g === p.guess)) gtodo.push(p);
-  });
-  if (!todo.length && !gtodo.length) return;
+  if (!records.some((r) => logged[r.player] !== sig(r))) return;   // nothing new
 
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(0)) return;
+  if (!lock.tryLock(0)) return;                                      // another copy is writing
   try {
-    const fresh = getJ_(logKey) || {};             // re-read: another copy may have just written
-    const now = new Date();
-    const imgs = CacheService.getScriptCache().getAll(todo.map((d) => K_.image(run, d.pair, d.attempt)));
-    const rows = todo.filter((d) => d.attempt > ((fresh[d.pair] && fresh[d.pair].d) || 0))
-      .map((d) => [now, "'" + run, d.pair, d.rule, d.attempt, d.verdict, imgs[K_.image(run, d.pair, d.attempt)] || '']);
-    const grows = gtodo.filter((p) => !(fresh[p.pair] && fresh[p.pair].g === p.guess))
-      .map((p) => [now, "'" + run, p.pair, p.guess]);
-    if (rows.length) {
-      const sh = sheet_(DRAW_SHEET, DRAW_HEADERS);
-      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
-    }
-    if (grows.length) {
-      const sh = sheet_(GUESS_SHEET, GUESS_HEADERS);
-      sh.getRange(sh.getLastRow() + 1, 1, grows.length, grows[0].length).setValues(grows);
-    }
-    P.pairs.forEach((p) => { fresh[p.pair] = { d: p.verdicts.length, g: p.guess || (fresh[p.pair] && fresh[p.pair].g) || null }; });
+    const fresh = JSON.parse(PropertiesService.getScriptProperties().getProperty(logKey) || '{}');
+    const now = new Date(), rows = [], grows = [];
+    records.forEach((r) => {
+      if (fresh[r.player] === sig(r)) return;
+      if (round === 'r1') {
+        rows.push([now, "'" + run, r.role, r.player, r.difficulty, JSON.stringify(r.data)]);
+      } else {
+        const prev = fresh[r.player] ? String(fresh[r.player]).split('|') : ['0', ''];
+        const done = Number(prev[0]) || 0;
+        r.attempts.slice(done).forEach((a, k) => rows.push([now, "'" + run, r.player, r.rule, done + k + 1, a.px, a.py, a.ex, a.ey, a.v]));
+        if (r.guess && r.guess !== prev.slice(1).join('|')) grows.push([now, "'" + run, r.player, r.rule, r.guess]);
+      }
+      fresh[r.player] = sig(r);
+    });
+    appendRows_(TABS[round], rows);
+    if (grows.length) appendRows_(TABS.r2guess, grows);
     putJ_(logKey, fresh);
   } finally {
     lock.releaseLock();
   }
+}
+
+function appendRows_(tab, rows) {
+  if (!rows.length) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(tab.name);
+  if (!sh) { sh = ss.insertSheet(tab.name); sh.appendRow(tab.headers); sh.setFrozenRows(1); }
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 }
 
 // ===================================================================
@@ -343,13 +231,6 @@ function archive_(run, P) {
 function short_(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
 function needRun_(run) { const r = short_(run, 40); if (!r) throw new Error('missing session code'); return r; }
 function needClient_(c) { const r = short_(c, 40); if (!r) throw new Error('missing device id'); return r; }
-
-function needTeam_(run, client, role) {
-  const team = getJ_(K_.team(run, needClient_(client)));
-  if (!team) throw new Error('this team has not joined');
-  if (team.role !== role) throw new Error('wrong role');
-  return team;
-}
 
 /** Read a small JSON value: cache first, then script properties. */
 function getJ_(key) {
@@ -387,23 +268,6 @@ function putJ_(key, value) {
   const s = JSON.stringify(value);
   CacheService.getScriptCache().put(key, s, SIX_HOURS);
   PropertiesService.getScriptProperties().setProperty(key, s);
-}
-
-function withLock_(fn) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(25000);
-  try { return fn(); } finally { lock.releaseLock(); }
-}
-
-function sheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName(name);
-  if (!sh) {
-    sh = ss.insertSheet(name);
-    sh.appendRow(headers);
-    sh.setFrozenRows(1);
-  }
-  return sh;
 }
 
 function json_(obj) {

@@ -1,20 +1,20 @@
-// Round 2 wording, shared by the student page and the instructor page. Edit here to change the round.
-// Each pair's judges get one of the four rules (the server hands them out in a shuffled rotation).
+// Round 2 wording and the hidden rules, shared by the student page and the instructor page.
+// Each player gets one rule (the server hands them out in a shuffled rotation, so the room is evenly mixed).
 (function (root) {
   var ROUND2 = {
-    artistPrompt: 'Draw a picture that includes a + and an =.',
-    artistHelp: 'Another team will judge each drawing with a secret rule and answer only yes or no. ' +
-                'Figure out the rule. You win with three yes answers in a row, using three different drawings.',
+    title: 'Find the hidden rule',
+    help: 'Tap to place a +, then tap to place an =. Press Check and the computer answers ✓ or ✗ ' +
+          'using a secret rule about where the two go. You have 10 tries. Three ✓ in a row wins.',
     rules: {
-      above: { short: '= above +',       judge: 'Say YES only if the drawing has a + and an =, and the = is ABOVE the +. Otherwise say NO.' },
-      below: { short: '= below +',       judge: 'Say YES only if the drawing has a + and an =, and the = is BELOW the +. Otherwise say NO.' },
-      left:  { short: '= left of +',     judge: 'Say YES only if the drawing has a + and an =, and the = is to the LEFT of the +. Otherwise say NO.' },
-      right: { short: '= right of +',    judge: 'Say YES only if the drawing has a + and an =, and the = is to the RIGHT of the +. Otherwise say NO.' }
+      above: { short: '= above +',    test: function (a) { return a.ey < a.py; } },
+      below: { short: '= below +',    test: function (a) { return a.ey > a.py; } },
+      left:  { short: '= left of +',  test: function (a) { return a.ex < a.px; } },
+      right: { short: '= right of +', test: function (a) { return a.ex > a.px; } }
     },
-    judgeHelp: 'When you’re not sure, say no. Never tell the artists the rule, and don’t tell other teams either.',
-    revealText: 'Every pair’s judges had a secret direction: the = had to be above, below, left of, or right of the +. ' +
-                'Nothing else mattered. Neighbouring teams usually had different rules, so overheard tips didn’t help.',
-    winStreak: 3
+    revealText: 'Everyone had one secret rule: the = had to be above, below, left of, or right of the +. ' +
+                'Nothing else mattered. Your neighbours probably had a different rule from you.',
+    winStreak: 3,
+    maxAttempts: 10
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = ROUND2;
   else root.GVD_ROUND2 = ROUND2;

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Round 2: Find the hidden rule</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 14px 14px 40px; }
+  .wrap { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .center { text-align: center; }
+  .kicker { font-size: 14px; color: var(--text-muted); margin: 0 0 6px; }
+  h1 { font-size: 28px; font-weight: 800; margin: 0 0 8px; letter-spacing: -.02em; color: var(--gen); }
+  .job { font-size: 16px; line-height: 1.45; color: var(--text-secondary); margin: 0; }
+  .status { font-size: 17px; font-weight: 700; text-align: center; min-height: 24px; }
+  .board {
+    position: relative; width: 100%; aspect-ratio: 1 / 1; background: #fff; border: 2px solid var(--line);
+    border-radius: 12px; touch-action: manipulation; cursor: crosshair; user-select: none; -webkit-user-select: none;
+  }
+  .board svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .glyph { font: 800 64px ui-sans-serif, system-ui, sans-serif; fill: #111; dominant-baseline: central; text-anchor: middle; }
+  .overlay { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 12px; background: rgba(252,252,251,.85);
+             font-size: 20px; font-weight: 700; color: var(--text-secondary); text-align: center; padding: 20px; }
+  .verdict { font-size: 72px; font-weight: 900; }
+  .yes { color: #0c7a37; } .no { color: #b42b2a; }
+  .row { display: flex; gap: 10px; } .row > * { flex: 1; }
+  .bigbtn { display: block; width: 100%; padding: 15px; border: 0; border-radius: 12px; font-size: 19px; font-weight: 700; color: #fff; background: var(--gen); }
+  .bigbtn.ghost { background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--line); }
+  .bigbtn:disabled { opacity: .35; cursor: not-allowed; }
+  .streak { display: flex; justify-content: center; gap: 8px; margin-top: 4px; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); }
+  .dot.on { background: #0c7a37; border-color: #0c7a37; }
+  .history { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .mini { text-align: center; font-size: 12px; font-weight: 700; }
+  .mini svg { width: 100%; aspect-ratio: 1 / 1; background: #fff; border: 2px solid var(--line); border-radius: 8px; display: block; }
+  .mini.y svg { border-color: #0c7a37; } .mini.n svg { border-color: #b42b2a; }
+  .mini text { font: 800 26px ui-sans-serif, system-ui, sans-serif; fill: #111; dominant-baseline: central; text-anchor: middle; }
+  textarea { width: 100%; font: inherit; font-size: 17px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); min-height: 80px; }
+  .err { color: #b42b2a; font-size: 13px; text-align: center; min-height: 16px; margin: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card center" id="problem" hidden><p class="job" id="problemText"></p>
+    <button class="btn" style="margin-top:14px" onclick="location.reload()">Try again</button></div>
+  <div class="card center" id="loading"><p class="job">Getting your secret rule…</p></div>
+
+  <div id="game" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div class="card center">
+      <p class="kicker">Round 2</p>
+      <h1 id="title"></h1>
+      <p class="job" id="help"></p>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="board" id="board" aria-label="Board: tap to place the + and then the =">
+      <svg viewBox="0 0 1000 1000" id="boardSvg"></svg>
+      <div class="overlay" id="overlay" hidden></div>
+    </div>
+    <div class="row">
+      <button class="bigbtn ghost" id="clearBtn">Clear</button>
+      <button class="bigbtn" id="checkBtn" disabled>Check</button>
+    </div>
+    <p class="err" id="saveErr"></p>
+
+    <div class="card center"><div class="kicker">✓ in a row</div><div class="streak" id="streak"></div></div>
+
+    <div class="card" id="guessCard" hidden>
+      <p class="status" style="text-align:left;color:var(--gen)" id="guessTitle"></p>
+      <p class="job" style="margin-bottom:10px">What do you think the secret rule is?</p>
+      <textarea id="guessText" maxlength="300" placeholder="I think the rule is…"></textarea>
+      <button class="bigbtn" id="guessBtn" style="margin-top:10px">Submit my guess</button>
+    </div>
+    <div class="card center" id="guessDone" hidden><p class="job">Guess saved. Eyes up front.</p></div>
+
+    <div class="card">
+      <div class="kicker">Your tries</div>
+      <div class="history" id="history"></div>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="round2-rule.js"></script>
+<script>
+(function () {
+  'use strict';
+  const R = window.GVD_ROUND2;
+  const cfg = window.GVD_CONFIG || {};
+  const params = new URLSearchParams(location.search);
+  const run = (params.get('run') || '').trim();
+  const DEMO = params.has('demo');
+  const $ = (id) => document.getElementById(id);
+  const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+  const show = (id) => ['problem', 'loading', 'game'].forEach((x) => { $(x).hidden = x !== id; });
+  const problem = (t) => { $('problemText').textContent = t; show('problem'); };
+
+  if (!run) return problem('This page needs a session code. Scan the round 2 QR code on the screen.');
+  const connected = cfg.scriptUrl && cfg.scriptUrl.indexOf('PASTE_') !== 0;
+  if (!connected && !DEMO) return problem('This app isn’t connected yet (config.js has no Apps Script URL).');
+
+  let client = store('gvd-r2p-client-' + run);
+  if (!client) { client = Math.random().toString(36).slice(2, 10); store('gvd-r2p-client-' + run, client); }
+  const saveKey = 'gvd-r2p-' + run;
+
+  // Everything about this player, kept on the phone and mirrored to the server.
+  let me = null;
+  try { me = JSON.parse(store(saveKey) || 'null'); } catch (e) {}
+
+  function post(body) {
+    Object.assign(body, { round: 'r2', run: run, client: client });
+    return fetch(cfg.scriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
+      .then((r) => r.json()).then((d) => { if (!d.ok) throw new Error(d.error || 'failed'); return d; });
+  }
+
+  // ---------- Get a rule (once per session per phone) ----------
+  function begin() {
+    if (me && me.rule) return start();
+    if (DEMO) {
+      me = { rule: params.get('rule') || Object.keys(R.rules)[Math.floor(Math.random() * 4)], attempts: [], guess: null };
+      return start();
+    }
+    let tries = 6;
+    (function join() {
+      post({ action: 'join' }).then((d) => {
+        me = { rule: d.rule, player: d.player, attempts: [], guess: null };
+        store(saveKey, JSON.stringify(me));
+        start();
+      }).catch(() => {
+        if (--tries > 0) setTimeout(join, 1000 + Math.random() * 2500);
+        else problem('Couldn’t reach the class server. Check your connection and try again.');
+      });
+    })();
+  }
+
+  // ---------- Saving: never blocks the game; retries quietly until it gets through ----------
+  let dirty = false, saving = false;
+  function save() {
+    store(saveKey, JSON.stringify(me));
+    if (DEMO) return;
+    dirty = true;
+    flush();
+  }
+  function flush() {
+    if (!dirty || saving) return;
+    saving = true; dirty = false;
+    post({ action: 'put', record: { rule: me.rule, attempts: me.attempts, guess: me.guess } })
+      .then(() => { $('saveErr').textContent = ''; })
+      .catch(() => { dirty = true; $('saveErr').textContent = 'Saving… (will keep trying)'; })
+      .finally(() => { saving = false; if (dirty) setTimeout(flush, 3000); });
+  }
+
+  // ---------- The game ----------
+  function start() {
+    show('game');
+    $('game').style.display = 'flex';
+    $('title').textContent = R.title;
+    $('help').textContent = R.help;
+    if (me.attempts.length) save();   // make sure the server has what this phone has
+
+    let plus = null, eq = null, flashing = false;
+    const clamp = (v) => Math.max(0.06, Math.min(0.94, v));
+    const svg = $('boardSvg');
+
+    function streak() { let s = 0; for (let i = me.attempts.length - 1; i >= 0 && me.attempts[i].v === 'yes'; i--) s++; return s; }
+    function won() {
+      let run = 0;
+      return me.attempts.some((a) => { run = a.v === 'yes' ? run + 1 : 0; return run >= R.winStreak; });
+    }
+    const out = () => me.attempts.length >= R.maxAttempts;
+    const finished = () => won() || out();
+
+    function drawBoard() {
+      let html = '';
+      if (plus) html += '<text class="glyph" x="' + plus[0] * 1000 + '" y="' + plus[1] * 1000 + '">+</text>';
+      if (eq) html += '<text class="glyph" x="' + eq[0] * 1000 + '" y="' + eq[1] * 1000 + '">=</text>';
+      svg.innerHTML = html;
+    }
+    function mini(a) {
+      return '<svg viewBox="0 0 100 100"><text x="' + a.px * 100 + '" y="' + a.py * 100 + '">+</text>' +
+             '<text x="' + a.ex * 100 + '" y="' + a.ey * 100 + '">=</text></svg>';
+    }
+    function refresh() {
+      const n = me.attempts.length;
+      $('status').textContent = finished() && !won() ? 'That’s all ' + R.maxAttempts + ' tries.'
+        : won() ? 'You found it: three ✓ in a row!'
+        : !plus ? 'Try ' + (n + 1) + ' of ' + R.maxAttempts + ': tap to place the +'
+        : !eq ? 'Now tap to place the ='
+        : 'Press Check (or tap to start over)';
+      $('checkBtn').disabled = !(plus && eq) || finished() || flashing;
+      $('clearBtn').disabled = finished();
+      const s = Math.min(streak(), R.winStreak);
+      $('streak').innerHTML = Array.from({ length: R.winStreak }, (_, i) => '<span class="dot' + (i < s ? ' on' : '') + '"></span>').join('');
+      $('guessCard').hidden = !finished() || !!me.guess;
+      $('guessTitle').textContent = won() ? 'Three ✓ in a row!' : 'Out of tries.';
+      $('guessDone').hidden = !me.guess;
+      $('history').innerHTML = me.attempts.map((a) => '<div class="mini ' + (a.v === 'yes' ? 'y' : 'n') + '">' + mini(a) +
+        (a.v === 'yes' ? '<span class="yes">✓</span>' : '<span class="no">✗</span>') + '</div>').join('') ||
+        '<span class="kicker" style="grid-column:1/-1">None yet.</span>';
+      if (!flashing) {
+        $('overlay').hidden = !finished();
+        $('overlay').innerHTML = won() ? 'Nice work. Now write down your guess.' : 'All ' + R.maxAttempts + ' tries used.';
+      }
+    }
+
+    $('board').addEventListener('click', (e) => {
+      if (finished() || flashing) return;
+      const r = $('board').getBoundingClientRect();
+      const p = [clamp((e.clientX - r.left) / r.width), clamp((e.clientY - r.top) / r.height)];
+      if (!plus || (plus && eq)) { plus = p; eq = null; } else { eq = p; }
+      drawBoard(); refresh();
+    });
+    $('clearBtn').onclick = () => { plus = eq = null; drawBoard(); refresh(); };
+
+    $('checkBtn').onclick = () => {
+      if (!(plus && eq) || finished()) return;
+      const a = { px: +plus[0].toFixed(3), py: +plus[1].toFixed(3), ex: +eq[0].toFixed(3), ey: +eq[1].toFixed(3) };
+      a.v = R.rules[me.rule].test(a) ? 'yes' : 'no';
+      me.attempts.push(a);
+      save();
+      flashing = true;
+      $('overlay').hidden = false;
+      $('overlay').innerHTML = '<div class="verdict ' + a.v + '">' + (a.v === 'yes' ? '✓' : '✗') + '</div>';
+      refresh();
+      setTimeout(() => { flashing = false; plus = eq = null; drawBoard(); refresh(); }, 1100);
+    };
+
+    $('guessBtn').onclick = () => {
+      const g = $('guessText').value.trim();
+      if (!g) return;
+      me.guess = g.slice(0, 300);
+      save(); refresh();
+    };
+
+    window.addEventListener('online', flush);
+    drawBoard(); refresh();
+  }
+
+  begin();
+})();
+</script>
+</body>
+</html>

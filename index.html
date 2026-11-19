@@ -364,12 +364,12 @@
     if (inFlight) return;
     inFlight = true;
     const thisRun = run;
-    fetch(cfg.scriptUrl + '?action=rows&run=' + encodeURIComponent(thisRun))
+    fetch(cfg.scriptUrl + '?action=all&round=r1&run=' + encodeURIComponent(thisRun))
       .then((r) => r.json())
       .then((d) => {
         if (!d.ok) throw new Error(d.error || 'bad response');
         if (thisRun !== run) return;   // session changed while we waited
-        lastData = S.scoreRun(L, d.rows || []); lastOk = Date.now();
+        lastData = S.scoreRun(L, d.records || []); lastOk = Date.now();
         render(lastData);
         setStatus('Live');
       })

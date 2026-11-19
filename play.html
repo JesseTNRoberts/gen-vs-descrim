@@ -245,8 +245,8 @@
     btn.disabled = true; btn.textContent = 'Sending…';
     $('submitErr').textContent = '';
     const payload = {
-      run: run, role: role, client: client, difficulty: difficulty,
-      data: isGen ? inputs.map((i) => i.value.trim().toLowerCase()) : answers
+      action: 'put', round: 'r1', run: run, client: client,
+      record: { role: role, difficulty: difficulty, data: isGen ? inputs.map((i) => i.value.trim().toLowerCase()) : answers }
     };
     const finish = () => {
       store('gvd-done-' + run, '1');

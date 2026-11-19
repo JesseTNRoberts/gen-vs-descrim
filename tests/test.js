@@ -40,36 +40,23 @@ assert.strictEqual(d.accuracy, 0.75);
 assert.strictEqual(d.items.find((i) => i.word === 'ramis').pctCorrect, 0.5);
 assert.strictEqual(S.scoreRun(L, []).generator.accuracy, null);
 
-// ---------- Apps Script (with a fake Sheet) ----------
-const rows = [['Timestamp', 'Session', 'Role', 'Device', 'Difficulty', 'Answers']];
-const fakeSheet = {
-  appendRow: (r) => rows.push(r.map((v) => (typeof v === 'string' && v[0] === "'") ? v.slice(1) : v)),
-  getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }),
-  setFrozenRows: () => {}
-};
-const ctx = {
-  SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => fakeSheet, insertSheet: () => fakeSheet }) },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-  CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) },
-  ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
-  JSON, Math, String, Number, Object, Array, Date
-};
-vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', 'Code.gs'), 'utf8'), ctx);
-const post = (b) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(b) } }).text);
-const get = (p) => JSON.parse(ctx.doGet({ parameter: p }).text);
-
-assert(post({ run: '2026-11-19', role: 'generator', client: 'a', difficulty: 4, data: ['sorimo', 'x'] }).ok);
-assert(post({ run: '2026-11-19', role: 'generator', client: 'a', difficulty: 5, data: ['haketan'] }).ok); // resubmit
-assert(post({ run: '2026-11-19', role: 'discriminator', client: 'b', difficulty: 2, data: right }).ok);
-assert(post({ run: '2026-11-19-b', role: 'discriminator', client: 'c', difficulty: 2, data: right }).ok);
-assert(!post({ run: '2026-11-19', role: 'hacker', client: 'z', difficulty: 2, data: [] }).ok);
-assert(!post({ run: '', role: 'generator', client: 'z', difficulty: 2, data: [] }).ok);
-const got = get({ action: 'rows', run: '2026-11-19' });
-assert.strictEqual(got.rows.length, 2, 'one row per device per session');
-assert.deepStrictEqual(got.rows.find((r) => r.role === 'generator').data, ['haketan'], 'last submission wins');
-const scored = S.scoreRun(L, got.rows);
-assert.strictEqual(scored.discriminator.accuracy, 1);
+// ---------- Apps Script round 1 path (with fake Google services) ----------
+const { loadCodeGs } = require('./fake-gas');
+const G = loadCodeGs();
+const put = (client, record, run = '2026-11-19') => G.post({ action: 'put', round: 'r1', run, client, record });
+assert(put('a', { role: 'generator', difficulty: 4, data: ['sorimo', 'x'] }).ok);
+assert(put('a', { role: 'generator', difficulty: 5, data: ['haketan'] }).ok);           // resubmit replaces
+assert(put('b', { role: 'discriminator', difficulty: 2, data: right }).ok);
+assert(put('c', { role: 'discriminator', difficulty: 2, data: right }, '2026-11-19-b').ok);
+assert(!put('z', { role: 'hacker', difficulty: 2, data: [] }).ok);
+assert(!G.post({ action: 'put', round: 'r1', run: '', client: 'z', record: { role: 'generator', difficulty: 2, data: [] } }).ok);
+const got = G.get({ action: 'all', round: 'r1', run: '2026-11-19' });
+assert.strictEqual(got.records.length, 2, 'one record per device per session');
+assert.deepStrictEqual(got.records.find((r) => r.role === 'generator').data, ['haketan'], 'last submission wins');
+assert.strictEqual(S.scoreRun(L, got.records).discriminator.accuracy, 1);
+assert.strictEqual(G.sheets.Responses.rows.length, 3, 'header + two archived rows');
+G.get({ action: 'all', round: 'r1', run: '2026-11-19' });
+assert.strictEqual(G.sheets.Responses.rows.length, 3, 'archived once');
 
 console.log('generator chance level: ' + (g.chance * 100).toFixed(3) + '%');
 console.log('all tests passed');
