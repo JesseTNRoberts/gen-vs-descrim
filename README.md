@@ -42,7 +42,7 @@ impostor *kasrino*, but it's allowed.
 
 Everyone plays on their own phone. Students scan the round 2 QR code, tap to place a **+**, tap again
 to place an **=**, and press *Check*. The page answers ✓ or ✗ using that student's secret rule:
-the = must be **above**, **below**, **left of** or **right of** the +. Rules go out in a shuffled
+the = must be in one diagonal direction from the + (**above and left**, **above and right**, **below and left**, **below and right**), so random placing gets ✓ only about a quarter of the time. Rules go out in a shuffled
 rotation, so the room is evenly mixed and neighbours usually have different rules. Ten tries; three ✓
 in a row wins; then they type their guess at the rule.
 
@@ -50,7 +50,7 @@ Your screen (`round2.html`):
 - **Join:** QR code, players, tries, how many found their rule.
 - **Players:** a live grid of everyone's latest placement and a 10-slot ✓/✗ strip. Rules stay hidden
   until you press *Reveal the rules*.
-- **Summary:** headline numbers, the learning curve (share of ✓ by try number, against the 50% you'd
+- **Summary:** headline numbers, the learning curve (share of ✓ by try number, against the 25% you'd
   get by placing at random), a scatter per rule of where the = landed relative to the +, and every guess.
 
 It's learning from feedback alone: nobody is ever shown a correct example, only ✓ or ✗.

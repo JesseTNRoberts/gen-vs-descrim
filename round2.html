@@ -155,7 +155,7 @@
   const params = new URLSearchParams(location.search);
   const DEMO = params.has('demo') || !cfg.scriptUrl || cfg.scriptUrl.indexOf('PASTE_') === 0;
   const POLL_MS = Math.max(2, Number(cfg.pollSeconds) || 4) * 1000;
-  const RULE_ORDER = ['above', 'below', 'left', 'right'];
+  const RULE_ORDER = R.ruleOrder;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -272,7 +272,7 @@
         const at = recs.map((r) => r.attempts[a - 1]).filter(Boolean);
         curve.push({ a: a, n: at.length, yes: at.filter((x) => x.v === 'yes').length });
       }
-      const grid = [0, 25, 75, 100].map((p) => '<div class="gridline" style="bottom:' + p + '%"></div>').join('');
+      const grid = [0, 25, 50, 75, 100].map((p) => '<div class="gridline" style="bottom:' + p + '%"></div>').join('');
       const bars = curve.map((c) => {
         const pct = c.n ? c.yes / c.n : 0;
         return '<div class="bar" style="height:' + pct * 100 + '%" title="Try ' + c.a + ': ' + c.yes + ' of ' + c.n + ' got ✓">' +
@@ -280,7 +280,7 @@
       }).join('');
       $('chart').innerHTML =
         '<div class="chart"><div class="yaxis"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div>' +
-        '<div class="plot">' + grid + '<div class="chance" style="bottom:50%"><span>random placing ≈ 50%</span></div>' +
+        '<div class="plot">' + grid + '<div class="chance" style="bottom:' + R.chance * 100 + '%"><span>random placing ≈ ' + Math.round(R.chance * 100) + '%</span></div>' +
         '<div class="bars">' + bars + '</div></div>' +
         '<div class="xlabels">' + curve.map((c) => '<div>#' + c.a + '<br>n=' + c.n + '</div>').join('') + '</div>' +
         '<div class="xtitle">Try number (n = players who got that far)</div></div>';
@@ -335,22 +335,21 @@
     if (!demo) {
       let seed = 5;
       const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-      const dirs = { above: [0, -1], below: [0, 1], left: [-1, 0], right: [1, 0] };
-      const guessText = { above: 'the = has to be higher than the +', below: 'equals goes under the plus',
-                          left: 'the = is on the left', right: '= to the right of +' };
+      const guessText = { above: 'the = goes up and to the left', right: '= top right of the +',
+                          left: 'equals below the plus, on the left side', below: 'the = has to be lower and to the right' };
       demo = Array.from({ length: 24 }, (_, i) => {
         const rule = RULE_ORDER[(i + 2) % 4], atts = [];
         let knows = false, streak = 0;
         for (let k = 0; k < R.maxAttempts && streak < R.winStreak; k++) {
           const px = .2 + rnd() * .6, py = .2 + rnd() * .6;
           let ex, ey;
-          if (knows) { const d = dirs[rule]; ex = px + d[0] * (.15 + rnd() * .2) + (rnd() - .5) * .25; ey = py + d[1] * (.15 + rnd() * .2) + (rnd() - .5) * .25; }
+          if (knows) { const d = R.rules[rule].dir; ex = px + d[0] * (.08 + rnd() * .25); ey = py + d[1] * (.08 + rnd() * .25); }
           else { ex = .1 + rnd() * .8; ey = .1 + rnd() * .8; }
           const a = { px: px, py: py, ex: Math.min(.94, Math.max(.06, ex)), ey: Math.min(.94, Math.max(.06, ey)) };
           a.v = R.rules[rule].test(a) ? 'yes' : 'no';
           atts.push(a);
           streak = a.v === 'yes' ? streak + 1 : 0;
-          if (!knows && rnd() < 0.35) knows = true;
+          if (!knows && rnd() < 0.22) knows = true;
         }
         return { player: i + 1, rule: rule, attempts: atts, guess: streak >= R.winStreak && i % 3 ? guessText[rule] : null };
       });
