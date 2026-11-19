@@ -19,9 +19,9 @@ Open `index.html?demo=1` to see everything with a fake class, no setup needed.
 ## The mystery language
 
 Every syllable is a consonant followed by a vowel (*ka, mi, to*), and a word may end in a bare
-**n**: Japanese syllable structure (*su-shi, ra-me-n, Ni-ho-n*), which makes a nice reveal.
+**n**. Any consonant counts (*y* included) and words can be any length.
 Students see 16 example words. Discriminators judge 10 words in a shuffled order: 5 belong
-(two end in *n*), 5 impostors that each break one rule.
+(two end in *n*), 5 impostors that each break the rule in one way.
 
 ## How it's scored
 

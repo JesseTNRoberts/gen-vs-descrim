@@ -11,8 +11,9 @@ L.testItems.forEach((t) => {
   assert.strictEqual(S.isValid(L, t.word), t.belongs, 'answer key disagrees with the rule: ' + t.word);
   assert(!L.examples.includes(t.word), 'test word is also an example: ' + t.word);
 });
-for (const [w, ok] of [['Kamino ', true], ['ka', false], ['kana', true], ['kanan', true], ['kann', false],
-                       ['akami', false], ['kantaro', false], ['kakakakaka', true], ['kakakakakaka', false]]) {
+for (const [w, ok] of [['Kamino ', true], ['ka', true], ['kana', true], ['kanan', true], ['kann', false],
+                       ['akami', false], ['kantaro', false], ['lomaki', true], ['fovaju', true], ['yuki', true],
+                       ['kamit', false], ['n', false], ['', false]]) {
   assert.strictEqual(S.isValid(L, w), ok, 'edge case ' + w);
 }
 

@@ -401,7 +401,7 @@
       return rnd() < 0.25 ? w + 'n' : w;
     };
     const popular = ['sorika', 'mitano', 'kamiro'];
-    const breakIt = (w) => pick([w + 't', w.slice(0, 2) + 'r' + w.slice(2), w.slice(0, 3) + 'a' + w.slice(3), 'l' + w.slice(1), w + 's']);
+    const breakIt = (w) => pick([w + 't', w.slice(0, 2) + 'r' + w.slice(2), w.slice(0, 3) + 'a' + w.slice(3), 'a' + w, w + 's']);
     const rows = [];
     for (let i = 0; i < gn; i++) {
       const words = [];
@@ -416,7 +416,7 @@
       }
       rows.push({ role: 'generator', difficulty: 3 + Math.floor(rnd() * 3), data: words });
     }
-    const hardness = { haketan: .45, dokiren: .4, tamekot: .4, lomaki: .3, koaru: .2 };
+    const hardness = { haketan: .45, dokiren: .4, tamekot: .4, omika: .3, koaru: .2 };
     for (let i = 0; i < kn; i++) {
       const answers = {};
       L.testItems.forEach((it) => {

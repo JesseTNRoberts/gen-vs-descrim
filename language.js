@@ -3,14 +3,15 @@
 (function (root) {
   var LANGUAGE = {
     // Every syllable is consonant + vowel. A word may end with a bare "n".
-    consonants: 'kstnhmyrwgzdbp',
+    // Any consonant counts (y is a consonant); any number of syllables.
+    consonants: 'bcdfghjklmnpqrstvwxyz',
     vowels: 'aeiou',
-    minSyllables: 2,
-    maxSyllables: 5,
+    minSyllables: 1,
+    maxSyllables: 15,
 
     ruleText: 'Every syllable is one consonant followed by one vowel (ka, mi, to…). ' +
               'The only exception: a word may end in a bare “n”.',
-    revealText: 'That is the sound structure of Japanese: su-shi, ra-me-n, Ni-ho-n.',
+    revealText: 'That\u2019s the whole rule: consonant, vowel, consonant, vowel\u2026 and maybe an n at the end.',
 
     // What everybody sees before their task.
     examples: [
@@ -30,7 +31,7 @@
       { word: 'dokiren', belongs: true  },  // the n-ending exception
       { word: 'koaru',   belongs: false },  // two vowels together
       { word: 'miwasu',  belongs: true  },
-      { word: 'lomaki',  belongs: false }   // "l" never appears in the language
+      { word: 'omika',   belongs: false }   // starts with a vowel
     ],
 
     wordsPerGenerator: 5
