@@ -37,6 +37,8 @@ const RULES = ['above', 'below', 'left', 'right'];
 const GUESS_SHEET = 'Guesses';
 const GUESS_HEADERS = ['Timestamp', 'Session', 'Pair', 'Guess'];
 const SIX_HOURS = 21600;
+// Bump on every change, so it's easy to check which version a deployment is running (open the /exec URL).
+const VERSION = '2026-11-19-quick-join';
 
 // ===================================================================
 // Entry points
@@ -69,7 +71,7 @@ function doGet(e) {
       case 'r2state':   return json_(r2State_(run, String(p.client || '')));
       case 'r2stats':   return json_(r2Stats_(run));
       case 'r2gallery': return json_(r2Gallery_(run));
-      default:          return json_({ ok: true, app: 'generator-vs-discriminator' });
+      default:          return json_({ ok: true, app: 'generator-vs-discriminator', version: VERSION });
     }
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
