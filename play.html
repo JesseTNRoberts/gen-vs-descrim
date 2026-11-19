@@ -6,130 +6,267 @@
 <title>Generator or Discriminator?</title>
 <link rel="stylesheet" href="style.css">
 <style>
-  body { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
-  .wrap { width: 100%; max-width: 440px; text-align: center; }
-  .kicker { font-size: 15px; color: var(--text-muted); margin: 0 0 10px; }
-  .role { font-size: 44px; font-weight: 800; margin: 0 0 14px; letter-spacing: -.02em; }
-  .role.gen { color: var(--gen); }
-  .role.disc { color: var(--disc); }
-  .job { font-size: 18px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 26px; }
-  .go {
+  body { padding: 18px 16px 48px; }
+  .wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .center { text-align: center; }
+  .kicker { font-size: 15px; color: var(--text-muted); margin: 0 0 8px; }
+  .role { font-size: 42px; font-weight: 800; margin: 0 0 12px; letter-spacing: -.02em; }
+  .gen-c { color: var(--gen); }
+  .disc-c { color: var(--disc); }
+  .job { font-size: 18px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 22px; }
+  .bigbtn {
     display: block; width: 100%; padding: 16px; border: 0; border-radius: 12px;
-    font-size: 20px; font-weight: 700; color: #fff; text-decoration: none;
+    font-size: 20px; font-weight: 700; color: #fff;
   }
-  .go.gen { background: var(--gen); }
-  .go.disc { background: var(--disc); }
-  .note { font-size: 14px; color: var(--text-muted); margin-top: 18px; }
-  .hidden { display: none; }
+  .bigbtn.gen { background: var(--gen); }
+  .bigbtn.disc { background: var(--disc); }
+  .bigbtn:disabled { opacity: .35; cursor: not-allowed; }
+  .note { font-size: 13px; color: var(--text-muted); margin-top: 14px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .sub { font-size: 14px; color: var(--text-muted); margin: 0 0 14px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ex { font-size: 18px; padding: 5px 12px; border-radius: 999px; background: var(--surface-0); border: 1px solid var(--line); }
+
+  .wordin { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .wordin span { width: 18px; color: var(--text-muted); font-weight: 600; }
+  .wordin input {
+    flex: 1; font-size: 20px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: #fff; color: var(--text-primary);
+  }
+  .wordin input:focus { outline: 2px solid var(--gen); border-color: transparent; }
+  .wordin input.bad { border-color: #e34948; }
+  .err { color: #b42b2a; font-size: 14px; min-height: 18px; margin: 2px 0 0; }
+
+  .judge { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; align-items: center; }
+  .judge .w { font-size: 22px; font-weight: 700; }
+  .pair { display: flex; gap: 6px; }
+  .opt {
+    border: 1px solid var(--line); background: #fff; border-radius: 10px;
+    padding: 9px 12px; font-size: 15px; color: var(--text-secondary);
+  }
+  .opt[aria-pressed="true"] { background: var(--disc); border-color: var(--disc); color: #fff; font-weight: 600; }
+
+  .scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .scale button {
+    border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 12px 0;
+    font-size: 18px; font-weight: 600; color: var(--text-secondary);
+  }
+  .scale button[aria-pressed="true"] { background: var(--text-primary); color: #fff; border-color: var(--text-primary); }
+  .scale-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+
+  .done-mark { font-size: 56px; line-height: 1; margin-bottom: 10px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="card" id="loading"><p class="secondary">Getting your role…</p></div>
 
-  <div class="card hidden" id="assigned">
+  <!-- Problems (no session code, not connected, …) -->
+  <div class="card center" id="problem" hidden>
+    <p class="role" style="font-size:28px">Hmm.</p>
+    <p class="job" id="problemText"></p>
+  </div>
+
+  <!-- Step 1: your role -->
+  <div class="card center" id="intro" hidden>
     <p class="kicker">You've been randomly assigned. You are a…</p>
     <h1 class="role" id="roleName"></h1>
     <p class="job" id="roleJob"></p>
-    <a class="go" id="goBtn" href="#">Start</a>
+    <button class="bigbtn" id="startBtn">Start</button>
     <p class="note">Session <span id="runLabel"></span></p>
   </div>
 
-  <div class="card hidden" id="problem">
-    <p class="role" style="font-size:28px">Hmm.</p>
-    <p class="job" id="problemText"></p>
-    <button class="btn" onclick="location.reload()">Try again</button>
+  <!-- Step 2: the task -->
+  <div id="task" hidden>
+    <div class="card">
+      <h2>Words from a mystery language</h2>
+      <p class="sub">Study these. They all belong.</p>
+      <div class="examples" id="examples"></div>
+    </div>
+
+    <div class="card" id="genTask" hidden style="margin-top:16px">
+      <h2>Invent <span id="nWords">5</span> new words that belong</h2>
+      <p class="sub">Don't copy the examples, and make your words different from each other.</p>
+      <div id="wordInputs"></div>
+      <p class="err" id="genErr"></p>
+    </div>
+
+    <div class="card" id="discTask" hidden style="margin-top:16px">
+      <h2>Which of these belong?</h2>
+      <p class="sub">Some are real words from the language. Some are impostors.</p>
+      <div class="judge" id="judgeList"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>How hard was that?</h2>
+      <div class="scale" id="scale"></div>
+      <div class="scale-labels"><span>Easy</span><span>Very hard</span></div>
+    </div>
+
+    <div style="margin-top:16px">
+      <button class="bigbtn" id="submitBtn" disabled>Submit</button>
+      <p class="err center" id="submitErr"></p>
+    </div>
+  </div>
+
+  <!-- Step 3: done -->
+  <div class="card center" id="done" hidden>
+    <div class="done-mark" id="doneMark">✓</div>
+    <p class="role" style="font-size:32px">Done!</p>
+    <p class="job">Eyes up front.</p>
   </div>
 </div>
 
 <script src="config.js"></script>
+<script src="language.js"></script>
 <script>
 (function () {
+  'use strict';
+  const L = window.GVD_LANGUAGE;
+  const cfg = window.GVD_CONFIG || {};
   const params = new URLSearchParams(location.search);
   const run = (params.get('run') || '').trim();
-  const demo = params.has('demo');
-  const cfg = window.GVD_CONFIG || {};
+  const DEMO = params.has('demo');
+  const $ = (id) => document.getElementById(id);
 
-  const ROLES = {
-    generator: {
-      cls: 'gen', name: 'Generator',
-      job: 'You’ll see some words from a mystery language. Then you’ll <b>invent new words</b> that belong to it.'
-    },
-    discriminator: {
-      cls: 'disc', name: 'Discriminator',
-      job: 'You’ll see some words from a mystery language. Then you’ll <b>judge</b> which new words belong to it and which are impostors.'
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+  function show(id) { ['problem', 'intro', 'task', 'done'].forEach((x) => { $(x).hidden = x !== id; }); }
+  function problem(t) { $('problemText').textContent = t; show('problem'); }
+
+  if (!run) return problem('This page needs a session code. Scan the QR code on the screen at the front of the room.');
+  const connected = cfg.scriptUrl && cfg.scriptUrl.indexOf('PASTE_') !== 0;
+  if (!connected && !DEMO) return problem('This app isn’t connected yet (config.js has no Apps Script URL).');
+
+  // ---------- Role: random once per session, sticky on this device ----------
+  let role = params.get('role') || store('gvd-role-' + run);
+  if (role !== 'generator' && role !== 'discriminator') role = Math.random() < 0.5 ? 'generator' : 'discriminator';
+  store('gvd-role-' + run, role);
+  let client = store('gvd-client-' + run);
+  if (!client) { client = Math.random().toString(36).slice(2, 10); store('gvd-client-' + run, client); }
+
+  const isGen = role === 'generator';
+  const cls = isGen ? 'gen' : 'disc';
+
+  if (store('gvd-done-' + run) === '1' && !params.has('again')) {
+    $('doneMark').className = 'done-mark ' + cls + '-c';
+    return show('done');
+  }
+
+  // ---------- Intro ----------
+  $('roleName').textContent = isGen ? 'Generator' : 'Discriminator';
+  $('roleName').className = 'role ' + cls + '-c';
+  $('roleJob').innerHTML = isGen
+    ? 'You’ll see some words from a mystery language. Then you’ll <b>invent new words</b> that belong to it.'
+    : 'You’ll see some words from a mystery language. Then you’ll <b>judge</b> which new words belong and which are impostors.';
+  $('runLabel').textContent = run + (DEMO ? ' (demo)' : '');
+  $('startBtn').className = 'bigbtn ' + cls;
+  $('startBtn').onclick = () => { show('task'); window.scrollTo(0, 0); };
+  show('intro');
+
+  // ---------- Task ----------
+  $('examples').innerHTML = L.examples.map((w) => '<span class="ex">' + w + '</span>').join('');
+  $('submitBtn').className = 'bigbtn ' + cls;
+
+  let difficulty = null;
+  const answers = {};
+  const inputs = [];
+
+  if (isGen) {
+    $('genTask').hidden = false;
+    $('nWords').textContent = L.wordsPerGenerator;
+    for (let i = 0; i < L.wordsPerGenerator; i++) {
+      const row = document.createElement('div');
+      row.className = 'wordin';
+      row.innerHTML = '<span>' + (i + 1) + '</span>';
+      const inp = document.createElement('input');
+      Object.assign(inp, { type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 30 });
+      inp.setAttribute('autocapitalize', 'none');
+      inp.setAttribute('autocorrect', 'off');
+      inp.setAttribute('aria-label', 'New word ' + (i + 1));
+      inp.addEventListener('input', update);
+      row.appendChild(inp);
+      $('wordInputs').appendChild(row);
+      inputs.push(inp);
     }
-  };
-
-  function show(id) {
-    ['loading', 'assigned', 'problem'].forEach(function (x) {
-      document.getElementById(x).classList.toggle('hidden', x !== id);
+  } else {
+    $('discTask').hidden = false;
+    const items = L.testItems.map((t) => t.word);
+    for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+    items.forEach((w) => {
+      const label = document.createElement('div');
+      label.className = 'w'; label.textContent = w;
+      const pair = document.createElement('div');
+      pair.className = 'pair';
+      [['yes', 'Belongs'], ['no', 'Impostor']].forEach(([v, txt]) => {
+        const b = document.createElement('button');
+        b.className = 'opt'; b.textContent = txt; b.setAttribute('aria-pressed', 'false');
+        b.onclick = () => {
+          answers[w] = v;
+          pair.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+          update();
+        };
+        pair.appendChild(b);
+      });
+      $('judgeList').append(label, pair);
     });
   }
-  function problem(text) {
-    document.getElementById('problemText').textContent = text;
-    show('problem');
+
+  for (let d = 1; d <= 5; d++) {
+    const b = document.createElement('button');
+    b.textContent = d; b.setAttribute('aria-pressed', 'false');
+    b.onclick = () => {
+      difficulty = d;
+      $('scale').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      update();
+    };
+    $('scale').appendChild(b);
   }
 
-  if (!run) {
-    problem('This page needs a session code. Scan the QR code on the screen at the front of the room.');
-    return;
-  }
-
-  // Role: random once per session, then sticky on this device (a refresh doesn't reroll).
-  const roleKey = 'gvd-role-' + run;
-  let role = null;
-  try { role = localStorage.getItem(roleKey); } catch (e) {}
-  if (role !== 'generator' && role !== 'discriminator') {
-    role = Math.random() < 0.5 ? 'generator' : 'discriminator';
-    try { localStorage.setItem(roleKey, role); } catch (e) {}
-  }
-  const R = ROLES[role];
-
-  function render(formUrl) {
-    document.getElementById('roleName').textContent = R.name;
-    document.getElementById('roleName').className = 'role ' + R.cls;
-    document.getElementById('roleJob').innerHTML = R.job;
-    document.getElementById('runLabel').textContent = run;
-    const go = document.getElementById('goBtn');
-    go.className = 'go ' + R.cls;
-    if (formUrl) {
-      go.href = formUrl;
+  function update() {
+    let ok = difficulty != null;
+    if (isGen) {
+      let msg = '';
+      inputs.forEach((inp) => {
+        const v = inp.value.trim();
+        const bad = v !== '' && !/^[A-Za-z]+$/.test(v);
+        inp.classList.toggle('bad', bad);
+        if (bad) msg = 'Letters only, please.';
+        if (v === '' || bad) ok = false;
+      });
+      $('genErr').textContent = msg;
     } else {
-      go.href = '#';
-      go.textContent = 'Start (demo: no form)';
-      go.addEventListener('click', function (e) { e.preventDefault(); });
+      ok = ok && L.testItems.every((t) => answers[t.word]);
     }
-    show('assigned');
+    $('submitBtn').disabled = !ok;
   }
 
-  if (demo) { render(null); return; }
-
-  if (!cfg.scriptUrl || cfg.scriptUrl.indexOf('PASTE_') === 0) {
-    problem('This app isn’t connected yet (config.js has no Apps Script URL).');
-    return;
-  }
-
-  function useConfig(c) {
-    const template = c[role];
-    if (!template) throw new Error('missing form link');
-    render(template.split(c.placeholder || 'RUNCODE').join(encodeURIComponent(run)));
-  }
-
-  let cached = null;
-  try { cached = JSON.parse(sessionStorage.getItem('gvd-config') || 'null'); } catch (e) {}
-  if (cached) { try { useConfig(cached); return; } catch (e) {} }
-
-  fetch(cfg.scriptUrl + '?action=config')
-    .then(function (r) { return r.json(); })
-    .then(function (c) {
-      if (c.error) throw new Error(c.error);
-      try { sessionStorage.setItem('gvd-config', JSON.stringify(c)); } catch (e) {}
-      useConfig(c);
+  $('submitBtn').onclick = function () {
+    const btn = this;
+    btn.disabled = true; btn.textContent = 'Sending…';
+    $('submitErr').textContent = '';
+    const payload = {
+      run: run, role: role, client: client, difficulty: difficulty,
+      data: isGen ? inputs.map((i) => i.value.trim().toLowerCase()) : answers
+    };
+    const finish = () => {
+      store('gvd-done-' + run, '1');
+      $('doneMark').className = 'done-mark ' + cls + '-c';
+      show('done');
+      window.scrollTo(0, 0);
+    };
+    if (DEMO) return setTimeout(finish, 400);
+    fetch(cfg.scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // keeps it a "simple" request (no CORS preflight)
+      body: JSON.stringify(payload)
     })
-    .catch(function () {
-      problem('Couldn’t reach the class server. Check your connection and try again.');
-    });
+      .then((r) => r.json())
+      .then((res) => { if (!res.ok) throw new Error(res.error || 'not saved'); finish(); })
+      .catch(() => {
+        btn.disabled = false; btn.textContent = 'Submit';
+        $('submitErr').textContent = 'That didn’t go through. Check your connection and tap Submit again.';
+      });
+  };
 })();
 </script>
 </body>

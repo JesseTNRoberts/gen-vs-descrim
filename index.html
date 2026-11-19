@@ -176,6 +176,8 @@
 
 <script src="vendor/qrcode.js"></script>
 <script src="config.js"></script>
+<script src="language.js"></script>
+<script src="scoring.js"></script>
 <script>
 (function () {
   'use strict';
@@ -349,6 +351,7 @@
   }
 
   // ---------------- Data ----------------
+  const L = window.GVD_LANGUAGE, S = window.GVD_SCORING;
   let lastData = null, lastOk = 0, inFlight = false;
 
   function setStatus(text, err) {
@@ -357,17 +360,17 @@
   }
 
   function poll() {
-    if (DEMO) { lastData = demoData(); lastOk = Date.now(); render(lastData); setStatus('Demo'); return; }
+    if (DEMO) { lastData = S.scoreRun(L, demoRows()); lastOk = Date.now(); render(lastData); setStatus('Demo'); return; }
     if (inFlight) return;
     inFlight = true;
     const thisRun = run;
-    fetch(cfg.scriptUrl + '?action=results&run=' + encodeURIComponent(thisRun))
+    fetch(cfg.scriptUrl + '?action=rows&run=' + encodeURIComponent(thisRun))
       .then((r) => r.json())
       .then((d) => {
-        if (d.error) throw new Error(d.error);
+        if (!d.ok) throw new Error(d.error || 'bad response');
         if (thisRun !== run) return;   // session changed while we waited
-        lastData = d; lastOk = Date.now();
-        render(d);
+        lastData = S.scoreRun(L, d.rows || []); lastOk = Date.now();
+        render(lastData);
         setStatus('Live');
       })
       .catch((e) => setStatus('Can’t reach the sheet: ' + e.message, true))
@@ -383,42 +386,46 @@
   }, POLL_MS);
 
   // ---------------- Demo data (no backend needed) ----------------
-  // Fake class that fills in over ~40 seconds so you can see the page move.
+  // A fake class that fills in over ~40 seconds, scored by the real scoring code.
   let demoStart = Date.now();
-  function demoData() {
+  function demoRows() {
     const t = (Date.now() - demoStart) / 1000;
     const gn = Math.min(14, Math.floor(t / 2.5)), kn = Math.min(15, Math.floor(t / 2.2));
-    const words = gn * 5;
-    const good = Math.round(words * 0.58), copied = Math.round(words * 0.08), repeated = Math.round(words * 0.06);
-    const invalid = words - good - copied - repeated;
-    const pool = ['sorika', 'mitano', 'kamiro', 'tesuran', 'bokami', 'yumeko', 'harito', 'nemuka', 'zubera', 'kotan', 'rinaso', 'pomeki'];
-    const topWords = pool.slice(0, Math.min(pool.length, Math.ceil(good / 3)))
-      .map((w, i) => ({ word: w, count: i === 0 ? Math.max(1, Math.floor(gn / 3)) : i < 3 ? 2 : 1 }));
-    const reasons = [['ends in a consonant (only n is allowed)', 0.45], ['two consonants in a row', 0.3],
-                     ['two vowels in a row', 0.15], ['uses a letter the language never uses', 0.1]];
-    const mistakes = invalid ? reasons.map(([r, f]) => ({ reason: r, count: Math.max(0, Math.round(invalid * f)) })).filter((m) => m.count) : [];
-    const key = [['sorimo', true, .93], ['tamekot', false, .62], ['haketan', true, .55], ['kasrino', false, .88],
-                 ['nuyabe', true, .9], ['ramis', false, .86], ['dokiren', true, .58], ['koaru', false, .8],
-                 ['miwasu', true, .94], ['lomaki', false, .7]];
-    const items = key.map(([w, b, p]) => {
-      const c = Math.round(kn * p);
-      return { word: w, belongs: b, answered: kn, correct: c, pctCorrect: kn ? c / kn : null };
-    });
-    const answered = kn * 10, correct = items.reduce((s, i) => s + i.correct, 0);
-    return {
-      run: run,
-      generator: { n: gn, words: words, good: good, invalid: invalid, copied: copied, repeated: repeated,
-                   accuracy: words ? good / words : null, chance: 0.00177, difficulty: gn ? 3.9 : null,
-                   topWords: topWords, distinctGood: Math.max(0, good - Math.floor(gn / 2)), mistakes: mistakes },
-      discriminator: { n: kn, answered: answered, correct: correct, accuracy: answered ? correct / answered : null,
-                       chance: 0.5, difficulty: kn ? 2.2 : null, items: items },
-      language: {
-        rule: 'Every syllable is one consonant followed by one vowel (ka, mi, to…). The only exception: a word may end in a bare “n”.',
-        reveal: 'That is the sound structure of Japanese: su-shi, ra-me-n, Ni-ho-n.',
-        examples: ['kamino', 'sutera', 'tomeken', 'risuka', 'yomira', 'nabutan', 'kesobi', 'hiyome',
-                   'maruten', 'sakudo', 'bonami', 'tezuran', 'wakeri', 'gomise', 'punaro', 'dokemu']
-      }
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pick = (s) => s[Math.floor(rnd() * s.length)];
+    const C = L.consonants, V = L.vowels;
+    const goodWord = () => {
+      let w = ''; const k = 2 + Math.floor(rnd() * 3);
+      for (let i = 0; i < k; i++) w += pick(C) + pick(V);
+      return rnd() < 0.25 ? w + 'n' : w;
     };
+    const popular = ['sorika', 'mitano', 'kamiro'];
+    const breakIt = (w) => pick([w + 't', w.slice(0, 2) + 'r' + w.slice(2), w.slice(0, 3) + 'a' + w.slice(3), 'l' + w.slice(1), w + 's']);
+    const rows = [];
+    for (let i = 0; i < gn; i++) {
+      const words = [];
+      for (let j = 0; j < L.wordsPerGenerator; j++) {
+        const r = rnd();
+        if (r < 0.12) words.push(pick(popular));
+        else if (r < 0.2) words.push(pick(L.examples));
+        else if (r < 0.25 && words.length) words.push(words[words.length - 1]);
+        else if (r < 0.58) words.push(goodWord());
+        else if (r < 0.66) words.push(goodWord());
+        else words.push(breakIt(goodWord()));
+      }
+      rows.push({ role: 'generator', difficulty: 3 + Math.floor(rnd() * 3), data: words });
+    }
+    const hardness = { haketan: .45, dokiren: .4, tamekot: .4, lomaki: .3, koaru: .2 };
+    for (let i = 0; i < kn; i++) {
+      const answers = {};
+      L.testItems.forEach((it) => {
+        const right = rnd() > (hardness[it.word] || 0.08);
+        answers[it.word] = (it.belongs === right) ? 'yes' : 'no';
+      });
+      rows.push({ role: 'discriminator', difficulty: 1 + Math.floor(rnd() * 3), data: answers });
+    }
+    return rows;
   }
 
   // ---------------- Start ----------------
