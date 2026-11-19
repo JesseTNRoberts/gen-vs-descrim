@@ -38,7 +38,7 @@ const GUESS_SHEET = 'Guesses';
 const GUESS_HEADERS = ['Timestamp', 'Session', 'Pair', 'Guess'];
 const SIX_HOURS = 21600;
 // Bump on every change, so it's easy to check which version a deployment is running (open the /exec URL).
-const VERSION = '2026-11-19-quick-join';
+const VERSION = '2026-11-19-safe-log';
 
 // ===================================================================
 // Entry points
@@ -48,9 +48,8 @@ function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     switch (body.action) {
-      // Only joining needs the script-wide lock (it hands out the next arrival number).
       // Drawing and judging touch only their own pair's state, and the two teams take turns,
-      // so they skip the lock: a busy classroom never queues behind one slow sheet write.
+      // so they don't hold the script-wide lock; only the brief sheet writes (and joining) do.
       case 'r2join':  return json_(r2Join_(body));
       case 'r2draw':  return json_(r2Draw_(body));
       case 'r2judge': return json_(r2Judge_(body));
@@ -231,7 +230,8 @@ function r2Judge_(b) {
   st.verdicts.push(b.verdict);
   putJ_(key, st);
   const img = CacheService.getScriptCache().get(K_.image(run, team.pair, st.attempt)) || '';
-  sheet_(DRAW_SHEET, DRAW_HEADERS).appendRow([new Date(), "'" + run, team.pair, st.rule, st.attempt, b.verdict, img]);
+  // Simultaneous appendRow calls can overwrite each other, so the sheet write (only) takes the lock.
+  withLock_(() => sheet_(DRAW_SHEET, DRAW_HEADERS).appendRow([new Date(), "'" + run, team.pair, st.rule, st.attempt, b.verdict, img]));
   CacheService.getScriptCache().remove(K_.stats(run));
   return { ok: true, attempt: st.attempt };
 }
@@ -240,7 +240,7 @@ function r2Guess_(b) {
   const run = needRun_(b.run), team = needTeam_(run, b.client, 'generator');
   const guess = short_(b.guess, 300);
   if (!guess) throw new Error('empty guess');
-  sheet_(GUESS_SHEET, GUESS_HEADERS).appendRow([new Date(), "'" + run, team.pair, guess]);
+  withLock_(() => sheet_(GUESS_SHEET, GUESS_HEADERS).appendRow([new Date(), "'" + run, team.pair, guess]));
   CacheService.getScriptCache().remove(K_.stats(run));
   return { ok: true };
 }
@@ -320,7 +320,7 @@ function putJ_(key, value) {
 
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  lock.waitLock(25000);
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
