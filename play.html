@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator or Discriminator?</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+  .wrap { width: 100%; max-width: 440px; text-align: center; }
+  .kicker { font-size: 15px; color: var(--text-muted); margin: 0 0 10px; }
+  .role { font-size: 44px; font-weight: 800; margin: 0 0 14px; letter-spacing: -.02em; }
+  .role.gen { color: var(--gen); }
+  .role.disc { color: var(--disc); }
+  .job { font-size: 18px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 26px; }
+  .go {
+    display: block; width: 100%; padding: 16px; border: 0; border-radius: 12px;
+    font-size: 20px; font-weight: 700; color: #fff; text-decoration: none;
+  }
+  .go.gen { background: var(--gen); }
+  .go.disc { background: var(--disc); }
+  .note { font-size: 14px; color: var(--text-muted); margin-top: 18px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="loading"><p class="secondary">Getting your role…</p></div>
+
+  <div class="card hidden" id="assigned">
+    <p class="kicker">You've been randomly assigned. You are a…</p>
+    <h1 class="role" id="roleName"></h1>
+    <p class="job" id="roleJob"></p>
+    <a class="go" id="goBtn" href="#">Start</a>
+    <p class="note">Session <span id="runLabel"></span></p>
+  </div>
+
+  <div class="card hidden" id="problem">
+    <p class="role" style="font-size:28px">Hmm.</p>
+    <p class="job" id="problemText"></p>
+    <button class="btn" onclick="location.reload()">Try again</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const run = (params.get('run') || '').trim();
+  const demo = params.has('demo');
+  const cfg = window.GVD_CONFIG || {};
+
+  const ROLES = {
+    generator: {
+      cls: 'gen', name: 'Generator',
+      job: 'You’ll see some words from a mystery language. Then you’ll <b>invent new words</b> that belong to it.'
+    },
+    discriminator: {
+      cls: 'disc', name: 'Discriminator',
+      job: 'You’ll see some words from a mystery language. Then you’ll <b>judge</b> which new words belong to it and which are impostors.'
+    }
+  };
+
+  function show(id) {
+    ['loading', 'assigned', 'problem'].forEach(function (x) {
+      document.getElementById(x).classList.toggle('hidden', x !== id);
+    });
+  }
+  function problem(text) {
+    document.getElementById('problemText').textContent = text;
+    show('problem');
+  }
+
+  if (!run) {
+    problem('This page needs a session code. Scan the QR code on the screen at the front of the room.');
+    return;
+  }
+
+  // Role: random once per session, then sticky on this device (a refresh doesn't reroll).
+  const roleKey = 'gvd-role-' + run;
+  let role = null;
+  try { role = localStorage.getItem(roleKey); } catch (e) {}
+  if (role !== 'generator' && role !== 'discriminator') {
+    role = Math.random() < 0.5 ? 'generator' : 'discriminator';
+    try { localStorage.setItem(roleKey, role); } catch (e) {}
+  }
+  const R = ROLES[role];
+
+  function render(formUrl) {
+    document.getElementById('roleName').textContent = R.name;
+    document.getElementById('roleName').className = 'role ' + R.cls;
+    document.getElementById('roleJob').innerHTML = R.job;
+    document.getElementById('runLabel').textContent = run;
+    const go = document.getElementById('goBtn');
+    go.className = 'go ' + R.cls;
+    if (formUrl) {
+      go.href = formUrl;
+    } else {
+      go.href = '#';
+      go.textContent = 'Start (demo: no form)';
+      go.addEventListener('click', function (e) { e.preventDefault(); });
+    }
+    show('assigned');
+  }
+
+  if (demo) { render(null); return; }
+
+  if (!cfg.scriptUrl || cfg.scriptUrl.indexOf('PASTE_') === 0) {
+    problem('This app isn’t connected yet (config.js has no Apps Script URL).');
+    return;
+  }
+
+  function useConfig(c) {
+    const template = c[role];
+    if (!template) throw new Error('missing form link');
+    render(template.split(c.placeholder || 'RUNCODE').join(encodeURIComponent(run)));
+  }
+
+  let cached = null;
+  try { cached = JSON.parse(sessionStorage.getItem('gvd-config') || 'null'); } catch (e) {}
+  if (cached) { try { useConfig(cached); return; } catch (e) {} }
+
+  fetch(cfg.scriptUrl + '?action=config')
+    .then(function (r) { return r.json(); })
+    .then(function (c) {
+      if (c.error) throw new Error(c.error);
+      try { sessionStorage.setItem('gvd-config', JSON.stringify(c)); } catch (e) {}
+      useConfig(c);
+    })
+    .catch(function () {
+      problem('Couldn’t reach the class server. Check your connection and try again.');
+    });
+})();
+</script>
+</body>
+</html>

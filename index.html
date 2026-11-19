@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator vs. Discriminator</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 20px 28px 40px; }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  header h1 { font-size: 22px; margin: 0 12px 0 0; letter-spacing: -.01em; }
+  .vs { color: var(--text-muted); font-weight: 400; }
+  .session { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 15px; }
+  .session code {
+    font: 600 15px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--surface-1); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px;
+    color: var(--text-primary);
+  }
+  .tabs { display: flex; gap: 4px; background: var(--surface-1); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+  .tabs button { border: 0; background: none; padding: 7px 18px; border-radius: 999px; font-size: 15px; color: var(--text-secondary); }
+  .tabs button[aria-selected="true"] { background: var(--text-primary); color: var(--surface-1); }
+  .spacer { flex: 1; }
+  .status { font-size: 13px; color: var(--text-muted); }
+  .status.err { color: #b42b2a; }
+  .demo-flag { font-size: 12px; font-weight: 700; color: #8a5a00; background: #fff3d6; border-radius: 6px; padding: 3px 8px; }
+
+  /* ---------- Join view ---------- */
+  #join { display: grid; grid-template-columns: minmax(300px, 520px) 1fr; gap: 28px; align-items: stretch; }
+  .qr { display: grid; place-items: center; padding: 20px; }
+  .qr svg { width: 100%; height: auto; max-height: 72vh; }
+  .join-text { display: flex; flex-direction: column; justify-content: center; gap: 22px; }
+  .join-text h2 { font-size: 46px; margin: 0; letter-spacing: -.02em; line-height: 1.05; }
+  .join-text p { font-size: 22px; line-height: 1.45; margin: 0; color: var(--text-secondary); }
+  .url { font: 500 16px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); word-break: break-all; }
+  .counts { display: flex; gap: 16px; flex-wrap: wrap; }
+  .count { padding: 16px 22px; min-width: 190px; }
+  .count .n { font-size: 44px; font-weight: 800; line-height: 1; }
+  .count .lbl { font-size: 15px; color: var(--text-secondary); margin-top: 6px; }
+  .count.gen .n { color: var(--gen); }
+  .count.disc .n { color: var(--disc); }
+
+  /* ---------- Results view ---------- */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .headline h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .big { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -.03em; margin: 12px 0 4px; }
+  .big-sub { font-size: 17px; color: var(--text-secondary); margin: 0 0 22px; }
+  .bars { display: grid; grid-template-columns: 150px 1fr 64px; gap: 10px 12px; align-items: center; }
+  .bars .lbl { font-size: 15px; color: var(--text-secondary); }
+  .bars .val { font-size: 15px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .track { height: 26px; background: var(--surface-0); border-radius: 4px; position: relative; }
+  .fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; transition: width .6s ease; }
+  .fill.chance { background: var(--chance); }
+  .fill.gen { background: var(--gen); }
+  .fill.disc { background: var(--disc); }
+  .meta { display: flex; gap: 22px; margin-top: 18px; font-size: 15px; color: var(--text-secondary); flex-wrap: wrap; }
+  .meta b { color: var(--text-primary); }
+
+  .detail { margin-top: 22px; }
+  .detail h3 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+  .detail h3 + .sub { margin-top: -8px; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); }
+  .section + .section { margin-top: 24px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 16px; background: var(--surface-0); }
+  .chip small { color: var(--text-muted); margin-left: 4px; }
+  .chip.bad { text-decoration: line-through; text-decoration-color: #e34948; }
+  .reasons { margin: 0; padding: 0; list-style: none; font-size: 15px; }
+  .reasons li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .reasons li span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .words { display: grid; grid-template-columns: 110px 92px 1fr 52px; gap: 8px 12px; align-items: center; }
+  .words .w { font-size: 18px; font-weight: 600; }
+  .words .truth { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .words .val { font-size: 15px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .words .track { height: 18px; }
+
+  .empty { color: var(--text-muted); font-size: 15px; }
+  #reveal { margin-top: 22px; border-left: 6px solid var(--text-primary); }
+  #reveal h2 { margin: 0 0 10px; font-size: 26px; }
+  #reveal p { font-size: 20px; line-height: 1.5; margin: 0 0 10px; }
+  #reveal .ex { font-size: 18px; color: var(--text-secondary); }
+  #reveal .ex b { color: var(--text-primary); }
+
+  [hidden] { display: none !important; }
+  @media (max-width: 900px) {
+    #join, .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Generator <span class="vs">vs.</span> Discriminator</h1>
+  <div class="session">
+    Session <code id="runCode"></code>
+    <button class="btn" id="newCode" title="Start a fresh session (e.g. a second section today)">New code</button>
+  </div>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabJoin" aria-selected="true">Join</button>
+    <button role="tab" id="tabResults" aria-selected="false">Results</button>
+  </div>
+  <button class="btn" id="revealBtn" hidden>Reveal the rule</button>
+  <div class="spacer"></div>
+  <span class="demo-flag" id="demoFlag" hidden>DEMO DATA</span>
+  <span class="status" id="status"></span>
+</header>
+
+<!-- ======================= JOIN ======================= -->
+<section id="join">
+  <div class="card qr" id="qr" aria-label="QR code to join"></div>
+  <div class="join-text">
+    <h2>Scan to join</h2>
+    <p>You'll be randomly made a <b style="color:var(--gen)">Generator</b> or a
+       <b style="color:var(--disc)">Discriminator</b>. Both of you will learn the same mystery language.</p>
+    <div class="url" id="joinUrl"></div>
+    <div class="counts">
+      <div class="card count gen"><div class="n" id="nGen">0</div><div class="lbl">generators done</div></div>
+      <div class="card count disc"><div class="n" id="nDisc">0</div><div class="lbl">discriminators done</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= RESULTS ======================= -->
+<section id="results" hidden>
+  <div class="grid2 headline">
+    <div class="card">
+      <h2><span class="tag gen">Generators</span></h2>
+      <div class="big" id="genBig" style="color:var(--gen)">—</div>
+      <p class="big-sub">of invented words belonged to the language</p>
+      <div class="bars" id="genBars"></div>
+      <div class="meta"><span><b id="genN">0</b> students</span><span>Felt like <b id="genDiff">—</b> / 5</span></div>
+    </div>
+    <div class="card">
+      <h2><span class="tag disc">Discriminators</span></h2>
+      <div class="big" id="discBig" style="color:var(--disc)">—</div>
+      <p class="big-sub">of judgements were right</p>
+      <div class="bars" id="discBars"></div>
+      <div class="meta"><span><b id="discN">0</b> students</span><span>Felt like <b id="discDiff">—</b> / 5</span></div>
+    </div>
+  </div>
+
+  <div class="grid2 detail">
+    <div class="card">
+      <div class="section">
+        <h3>What happened to every invented word</h3>
+        <div class="bars" id="genOutcomes"></div>
+      </div>
+      <div class="section">
+        <h3>Most popular inventions</h3>
+        <p class="sub" id="distinct"></p>
+        <div class="chips" id="topWords"></div>
+      </div>
+      <div class="section">
+        <h3>Why words didn't belong</h3>
+        <ul class="reasons" id="mistakes"></ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section">
+        <h3>Which words fooled the discriminators</h3>
+        <p class="sub">% of discriminators who judged each word correctly, hardest first</p>
+        <div class="words" id="discWords"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="reveal" hidden>
+    <h2>The rule</h2>
+    <p id="ruleText"></p>
+    <p id="revealText"></p>
+    <p class="ex" id="examples"></p>
+  </div>
+</section>
+
+<script src="vendor/qrcode.js"></script>
+<script src="config.js"></script>
+<script>
+(function () {
+  'use strict';
+  const cfg = window.GVD_CONFIG || {};
+  const params = new URLSearchParams(location.search);
+  const DEMO = params.has('demo') || !cfg.scriptUrl || cfg.scriptUrl.indexOf('PASTE_') === 0;
+  const POLL_MS = Math.max(2, Number(cfg.pollSeconds) || 4) * 1000;
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------- Session (run) code ----------------
+  // Default: today's date. Survives reloads. Only "New code" changes it.
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function loadRun() {
+    try {
+      const s = JSON.parse(localStorage.getItem('gvd-run') || 'null');
+      if (s && s.day === today() && s.code) return s.code;
+    } catch (e) {}
+    return today();
+  }
+  function saveRun(code) {
+    try { localStorage.setItem('gvd-run', JSON.stringify({ day: today(), code: code })); } catch (e) {}
+  }
+  function nextRun(code) {
+    const base = today();
+    const m = code.match(/^(\d{4}-\d{2}-\d{2})-([a-z])$/);
+    if (code === base) return base + '-b';
+    if (m && m[1] === base && m[2] < 'z') return base + '-' + String.fromCharCode(m[2].charCodeAt(0) + 1);
+    return base + '-' + Math.random().toString(36).slice(2, 4);
+  }
+  let run = loadRun();
+
+  // ---------------- Join view ----------------
+  function studentUrl() {
+    const u = new URL('play.html', location.href);
+    u.search = '';
+    u.searchParams.set('run', run);
+    if (DEMO) u.searchParams.set('demo', '1');
+    return u.toString();
+  }
+  function renderJoin() {
+    $('runCode').textContent = run;
+    const url = studentUrl();
+    $('joinUrl').textContent = url;
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    $('qr').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true, alt: 'QR code: ' + url });
+  }
+
+  let confirmTimer = null;
+  $('newCode').addEventListener('click', function () {
+    const b = this;
+    if (!b.classList.contains('warn')) {
+      b.classList.add('warn');
+      b.textContent = 'Start fresh? Click again';
+      confirmTimer = setTimeout(function () { b.classList.remove('warn'); b.textContent = 'New code'; }, 3500);
+      return;
+    }
+    clearTimeout(confirmTimer);
+    b.classList.remove('warn'); b.textContent = 'New code';
+    run = nextRun(run);
+    saveRun(run);
+    demoStart = Date.now();
+    lastData = null;
+    renderJoin();
+    render(null);
+    poll();
+  });
+
+  // ---------------- Tabs + reveal ----------------
+  function setTab(which) {
+    $('tabJoin').setAttribute('aria-selected', which === 'join');
+    $('tabResults').setAttribute('aria-selected', which === 'results');
+    $('join').hidden = which !== 'join';
+    $('results').hidden = which !== 'results';
+    $('revealBtn').hidden = which !== 'results';
+  }
+  $('tabJoin').addEventListener('click', () => setTab('join'));
+  $('tabResults').addEventListener('click', () => setTab('results'));
+  $('revealBtn').addEventListener('click', function () {
+    const r = $('reveal');
+    r.hidden = !r.hidden;
+    this.textContent = r.hidden ? 'Reveal the rule' : 'Hide the rule';
+    if (!r.hidden) r.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  // ---------------- Rendering ----------------
+  function pct(x) {
+    if (x == null || isNaN(x)) return '—';
+    if (x > 0 && x < 0.01) return '<1%';
+    return Math.round(x * 100) + '%';
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function barRow(label, value, cls, display, tip) {
+    const w = value == null ? 0 : Math.max(0, Math.min(1, value)) * 100;
+    return '<div class="lbl">' + esc(label) + '</div>' +
+           '<div class="track" title="' + esc(tip || (label + ': ' + display)) + '">' +
+             '<div class="fill ' + cls + '" style="width:' + w + '%"></div></div>' +
+           '<div class="val">' + esc(display) + '</div>';
+  }
+
+  function render(d) {
+    const g = d && d.generator, k = d && d.discriminator;
+    const gn = g ? g.n : 0, kn = k ? k.n : 0;
+    $('nGen').textContent = gn;
+    $('nDisc').textContent = kn;
+
+    // Headline cards
+    $('genBig').textContent = pct(g && g.accuracy);
+    $('discBig').textContent = pct(k && k.accuracy);
+    $('genN').textContent = gn;
+    $('discN').textContent = kn;
+    $('genDiff').textContent = g && g.difficulty != null ? g.difficulty.toFixed(1) : '—';
+    $('discDiff').textContent = k && k.difficulty != null ? k.difficulty.toFixed(1) : '—';
+    const gChance = g ? g.chance : 0.0018;
+    $('genBars').innerHTML =
+      barRow('Random letters', gChance, 'chance', pct(gChance), 'Chance that random letters happen to fit the language') +
+      barRow('This class', g && g.accuracy, 'gen', pct(g && g.accuracy));
+    $('discBars').innerHTML =
+      barRow('Coin flip', 0.5, 'chance', '50%', 'Guessing at random gets half right') +
+      barRow('This class', k && k.accuracy, 'disc', pct(k && k.accuracy));
+
+    // Generator outcomes
+    if (g && g.words) {
+      const t = g.words;
+      $('genOutcomes').innerHTML =
+        barRow('Belonged + new', g.good / t, 'gen', String(g.good), g.good + ' of ' + t + ' words') +
+        barRow('Broke a rule', g.invalid / t, 'chance', String(g.invalid), g.invalid + ' of ' + t + ' words') +
+        barRow('Copied an example', g.copied / t, 'chance', String(g.copied), 'Memorization: ' + g.copied + ' of ' + t) +
+        barRow('Repeated own word', g.repeated / t, 'chance', String(g.repeated), 'Repeats: ' + g.repeated + ' of ' + t);
+      $('distinct').textContent = g.distinctGood + ' different good words from ' + g.n + ' generators';
+      $('topWords').innerHTML = g.topWords.length
+        ? g.topWords.map((x) => '<span class="chip">' + esc(x.word) + (x.count > 1 ? '<small>×' + x.count + '</small>' : '') + '</span>').join('')
+        : '<span class="empty">None yet</span>';
+      $('mistakes').innerHTML = g.mistakes.length
+        ? g.mistakes.map((m) => '<li><span>' + esc(m.reason) + '</span><span>' + m.count + '</span></li>').join('')
+        : '<li><span class="empty">No mistakes yet</span><span></span></li>';
+    } else {
+      $('genOutcomes').innerHTML = '<div class="empty" style="grid-column:1/-1">Waiting for generators…</div>';
+      $('distinct').textContent = '';
+      $('topWords').innerHTML = '';
+      $('mistakes').innerHTML = '';
+    }
+
+    // Discriminator per-word
+    if (k && k.answered) {
+      const items = k.items.slice().sort((a, b) => (a.pctCorrect ?? 2) - (b.pctCorrect ?? 2));
+      $('discWords').innerHTML = items.map((it) =>
+        '<div class="w">' + esc(it.word) + '</div>' +
+        '<div class="truth">' + (it.belongs ? 'BELONGS' : 'IMPOSTOR') + '</div>' +
+        '<div class="track" title="' + esc(it.word + ': ' + it.correct + ' of ' + it.answered + ' correct') + '">' +
+          '<div class="fill disc" style="width:' + ((it.pctCorrect || 0) * 100) + '%"></div></div>' +
+        '<div class="val">' + pct(it.pctCorrect) + '</div>'
+      ).join('');
+    } else {
+      $('discWords').innerHTML = '<div class="empty" style="grid-column:1/-1">Waiting for discriminators…</div>';
+    }
+
+    // Reveal panel
+    if (d && d.language) {
+      $('ruleText').textContent = d.language.rule;
+      $('revealText').textContent = d.language.reveal;
+      $('examples').innerHTML = 'The examples everyone saw: ' +
+        d.language.examples.map((w) => /n$/.test(w) ? '<b>' + esc(w) + '</b>' : esc(w)).join(' · ');
+    }
+  }
+
+  // ---------------- Data ----------------
+  let lastData = null, lastOk = 0, inFlight = false;
+
+  function setStatus(text, err) {
+    $('status').textContent = text;
+    $('status').classList.toggle('err', !!err);
+  }
+
+  function poll() {
+    if (DEMO) { lastData = demoData(); lastOk = Date.now(); render(lastData); setStatus('Demo'); return; }
+    if (inFlight) return;
+    inFlight = true;
+    const thisRun = run;
+    fetch(cfg.scriptUrl + '?action=results&run=' + encodeURIComponent(thisRun))
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) throw new Error(d.error);
+        if (thisRun !== run) return;   // session changed while we waited
+        lastData = d; lastOk = Date.now();
+        render(d);
+        setStatus('Live');
+      })
+      .catch((e) => setStatus('Can’t reach the sheet: ' + e.message, true))
+      .finally(() => { inFlight = false; });
+  }
+
+  setInterval(function () {
+    if (!document.hidden) poll();
+    if (!DEMO && lastOk) {
+      const s = Math.round((Date.now() - lastOk) / 1000);
+      if (s > POLL_MS / 1000 * 3) setStatus('Last update ' + s + 's ago', true);
+    }
+  }, POLL_MS);
+
+  // ---------------- Demo data (no backend needed) ----------------
+  // Fake class that fills in over ~40 seconds so you can see the page move.
+  let demoStart = Date.now();
+  function demoData() {
+    const t = (Date.now() - demoStart) / 1000;
+    const gn = Math.min(14, Math.floor(t / 2.5)), kn = Math.min(15, Math.floor(t / 2.2));
+    const words = gn * 5;
+    const good = Math.round(words * 0.58), copied = Math.round(words * 0.08), repeated = Math.round(words * 0.06);
+    const invalid = words - good - copied - repeated;
+    const pool = ['sorika', 'mitano', 'kamiro', 'tesuran', 'bokami', 'yumeko', 'harito', 'nemuka', 'zubera', 'kotan', 'rinaso', 'pomeki'];
+    const topWords = pool.slice(0, Math.min(pool.length, Math.ceil(good / 3)))
+      .map((w, i) => ({ word: w, count: i === 0 ? Math.max(1, Math.floor(gn / 3)) : i < 3 ? 2 : 1 }));
+    const reasons = [['ends in a consonant (only n is allowed)', 0.45], ['two consonants in a row', 0.3],
+                     ['two vowels in a row', 0.15], ['uses a letter the language never uses', 0.1]];
+    const mistakes = invalid ? reasons.map(([r, f]) => ({ reason: r, count: Math.max(0, Math.round(invalid * f)) })).filter((m) => m.count) : [];
+    const key = [['sorimo', true, .93], ['tamekot', false, .62], ['haketan', true, .55], ['kasrino', false, .88],
+                 ['nuyabe', true, .9], ['ramis', false, .86], ['dokiren', true, .58], ['koaru', false, .8],
+                 ['miwasu', true, .94], ['lomaki', false, .7]];
+    const items = key.map(([w, b, p]) => {
+      const c = Math.round(kn * p);
+      return { word: w, belongs: b, answered: kn, correct: c, pctCorrect: kn ? c / kn : null };
+    });
+    const answered = kn * 10, correct = items.reduce((s, i) => s + i.correct, 0);
+    return {
+      run: run,
+      generator: { n: gn, words: words, good: good, invalid: invalid, copied: copied, repeated: repeated,
+                   accuracy: words ? good / words : null, chance: 0.00177, difficulty: gn ? 3.9 : null,
+                   topWords: topWords, distinctGood: Math.max(0, good - Math.floor(gn / 2)), mistakes: mistakes },
+      discriminator: { n: kn, answered: answered, correct: correct, accuracy: answered ? correct / answered : null,
+                       chance: 0.5, difficulty: kn ? 2.2 : null, items: items },
+      language: {
+        rule: 'Every syllable is one consonant followed by one vowel (ka, mi, to…). The only exception: a word may end in a bare “n”.',
+        reveal: 'That is the sound structure of Japanese: su-shi, ra-me-n, Ni-ho-n.',
+        examples: ['kamino', 'sutera', 'tomeken', 'risuka', 'yomira', 'nabutan', 'kesobi', 'hiyome',
+                   'maruten', 'sakudo', 'bonami', 'tezuran', 'wakeri', 'gomise', 'punaro', 'dokemu']
+      }
+    };
+  }
+
+  // ---------------- Start ----------------
+  $('demoFlag').hidden = !DEMO;
+  if (params.get('view') === 'results') setTab('results');
+  renderJoin();
+  render(null);
+  poll();
+})();
+</script>
+</body>
+</html>
