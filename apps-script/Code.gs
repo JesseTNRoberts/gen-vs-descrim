@@ -1,3 +1,4 @@
+/** @OnlyCurrentDoc */
 /**
  * Generator vs. Discriminator: storage for student answers.
  *
