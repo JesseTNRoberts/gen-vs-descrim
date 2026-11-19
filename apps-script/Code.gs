@@ -24,7 +24,9 @@
  *
  * Live round 2 state is kept in the script cache (fast, no daily quota) and mirrored to
  * script properties on every change, so nothing is lost if the cache drops an entry.
- * Every judged drawing is also written to the "Drawings" tab.
+ * Drawings stay in the cache for six hours. The sheet is never touched while teams play:
+ * the results page's polling copies new verdicts, drawings and guesses into the "Drawings"
+ * and "Guesses" tabs in batches, as a permanent record.
  * All scoring and charts happen in the browser.
  */
 
@@ -38,7 +40,7 @@ const GUESS_SHEET = 'Guesses';
 const GUESS_HEADERS = ['Timestamp', 'Session', 'Pair', 'Guess'];
 const SIX_HOURS = 21600;
 // Bump on every change, so it's easy to check which version a deployment is running (open the /exec URL).
-const VERSION = '2026-11-19-safe-log';
+const VERSION = '2026-11-19-no-sheet-in-game';
 
 // ===================================================================
 // Entry points
@@ -143,6 +145,7 @@ const K_ = {
   team:   (run, client) => 'r2c:' + run + ':' + client, // {role, pair}
   state:  (run, pair) => 'r2s:' + run + ':' + pair,     // {rule, attempt, pending, verdicts}
   image:  (run, pair, attempt) => 'r2i:' + run + ':' + pair + ':' + attempt,
+  guess:  (run, pair) => 'r2g:' + run + ':' + pair,
   stats:  (run) => 'r2stats:' + run
 };
 
@@ -229,9 +232,6 @@ function r2Judge_(b) {
   st.pending = false;
   st.verdicts.push(b.verdict);
   putJ_(key, st);
-  const img = CacheService.getScriptCache().get(K_.image(run, team.pair, st.attempt)) || '';
-  // Simultaneous appendRow calls can overwrite each other, so the sheet write (only) takes the lock.
-  withLock_(() => sheet_(DRAW_SHEET, DRAW_HEADERS).appendRow([new Date(), "'" + run, team.pair, st.rule, st.attempt, b.verdict, img]));
   CacheService.getScriptCache().remove(K_.stats(run));
   return { ok: true, attempt: st.attempt };
 }
@@ -240,9 +240,23 @@ function r2Guess_(b) {
   const run = needRun_(b.run), team = needTeam_(run, b.client, 'generator');
   const guess = short_(b.guess, 300);
   if (!guess) throw new Error('empty guess');
-  withLock_(() => sheet_(GUESS_SHEET, GUESS_HEADERS).appendRow([new Date(), "'" + run, team.pair, guess]));
+  putJ_(K_.guess(run, team.pair), guess);   // its own key, so it never races a verdict
   CacheService.getScriptCache().remove(K_.stats(run));
   return { ok: true };
+}
+
+/** Every pair's rule, verdicts and guess, read in one batch from the cache (properties as backup). */
+function r2Pairs_(run) {
+  const teams = Number(getJ_(K_.count(run)) || 0);
+  const n = Math.ceil(teams / 2), keys = [];
+  for (let p = 1; p <= n; p++) keys.push(K_.state(run, p), K_.guess(run, p));
+  const v = getAllJ_(keys);
+  const pairs = [];
+  for (let p = 1; p <= n; p++) {
+    const st = v[K_.state(run, p)];
+    if (st) pairs.push({ pair: p, rule: st.rule, hasJudge: teams >= p * 2, verdicts: st.verdicts, guess: v[K_.guess(run, p)] || null });
+  }
+  return { teams: teams, pairs: pairs };
 }
 
 /** Verdicts and guesses for the results page (no images, so it is cheap to poll). */
@@ -251,37 +265,75 @@ function r2Stats_(run) {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(K_.stats(run));
   if (hit) return JSON.parse(hit);
-
-  const d = sheet_(DRAW_SHEET, DRAW_HEADERS);
-  const drawings = d.getLastRow() < 2 ? [] :
-    d.getRange(2, 1, d.getLastRow() - 1, 6).getValues()
-      .filter((v) => String(v[1]) === run)
-      .map((v) => ({ pair: Number(v[2]), rule: v[3], attempt: Number(v[4]), verdict: v[5] }));
-  const g = sheet_(GUESS_SHEET, GUESS_HEADERS);
-  const guesses = g.getLastRow() < 2 ? [] :
-    g.getRange(2, 1, g.getLastRow() - 1, 4).getValues()
-      .filter((v) => String(v[1]) === run)
-      .map((v) => ({ pair: Number(v[2]), guess: String(v[3]) }));
-  const teams = Number(getJ_(K_.count(run)) || 0);
-  const pairs = [];
-  for (let p = 1; p <= Math.ceil(teams / 2); p++) {
-    const st = getJ_(K_.state(run, p));
-    if (st) pairs.push({ pair: p, rule: st.rule, hasJudge: teams >= p * 2 });
-  }
-  const out = { ok: true, run: run, teams: teams, pairs: pairs, drawings: drawings, guesses: guesses };
+  const P = r2Pairs_(run);
+  const drawings = [], guesses = [];
+  P.pairs.forEach((p) => {
+    p.verdicts.forEach((v, i) => drawings.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: v }));
+    if (p.guess) guesses.push({ pair: p.pair, guess: p.guess });
+  });
+  const out = {
+    ok: true, run: run, teams: P.teams, drawings: drawings, guesses: guesses,
+    pairs: P.pairs.map((p) => ({ pair: p.pair, rule: p.rule, hasJudge: p.hasJudge }))
+  };
   try { cache.put(K_.stats(run), JSON.stringify(out), 3); } catch (err) {}
+  try { archive_(run, P); } catch (err) { /* the record can catch up on the next poll */ }
   return out;
 }
 
 /** Every judged drawing with its image, for the gallery. */
 function r2Gallery_(run) {
   needRun_(run);
-  const d = sheet_(DRAW_SHEET, DRAW_HEADERS);
-  const drawings = d.getLastRow() < 2 ? [] :
-    d.getRange(2, 1, d.getLastRow() - 1, 7).getValues()
-      .filter((v) => String(v[1]) === run && String(v[6]).indexOf('data:image/png') === 0)
-      .map((v) => ({ pair: Number(v[2]), rule: v[3], attempt: Number(v[4]), verdict: v[5], img: String(v[6]) }));
+  const P = r2Pairs_(run);
+  const keys = [];
+  P.pairs.forEach((p) => p.verdicts.forEach((v, i) => keys.push(K_.image(run, p.pair, i + 1))));
+  const imgs = CacheService.getScriptCache().getAll(keys);
+  const drawings = [];
+  P.pairs.forEach((p) => p.verdicts.forEach((v, i) => {
+    const img = imgs[K_.image(run, p.pair, i + 1)];
+    if (img) drawings.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: v, img: img });
+  }));
   return { ok: true, run: run, drawings: drawings };
+}
+
+/**
+ * Copy new verdicts and guesses into the Drawings and Guesses tabs, as a permanent record.
+ * Called from the results page's polling, never from the students' requests, and skipped if
+ * another copy is already writing, so the game never waits on the sheet.
+ */
+function archive_(run, P) {
+  const logKey = 'r2logged:' + run;
+  const logged = getJ_(logKey) || {};
+  const todo = [], gtodo = [];
+  P.pairs.forEach((p) => {
+    const done = (logged[p.pair] && logged[p.pair].d) || 0;
+    for (let i = done; i < p.verdicts.length; i++) todo.push({ pair: p.pair, rule: p.rule, attempt: i + 1, verdict: p.verdicts[i] });
+    if (p.guess && !(logged[p.pair] && logged[p.pair].g === p.guess)) gtodo.push(p);
+  });
+  if (!todo.length && !gtodo.length) return;
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) return;
+  try {
+    const fresh = getJ_(logKey) || {};             // re-read: another copy may have just written
+    const now = new Date();
+    const imgs = CacheService.getScriptCache().getAll(todo.map((d) => K_.image(run, d.pair, d.attempt)));
+    const rows = todo.filter((d) => d.attempt > ((fresh[d.pair] && fresh[d.pair].d) || 0))
+      .map((d) => [now, "'" + run, d.pair, d.rule, d.attempt, d.verdict, imgs[K_.image(run, d.pair, d.attempt)] || '']);
+    const grows = gtodo.filter((p) => !(fresh[p.pair] && fresh[p.pair].g === p.guess))
+      .map((p) => [now, "'" + run, p.pair, p.guess]);
+    if (rows.length) {
+      const sh = sheet_(DRAW_SHEET, DRAW_HEADERS);
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+    if (grows.length) {
+      const sh = sheet_(GUESS_SHEET, GUESS_HEADERS);
+      sh.getRange(sh.getLastRow() + 1, 1, grows.length, grows[0].length).setValues(grows);
+    }
+    P.pairs.forEach((p) => { fresh[p.pair] = { d: p.verdicts.length, g: p.guess || (fresh[p.pair] && fresh[p.pair].g) || null }; });
+    putJ_(logKey, fresh);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ===================================================================
@@ -309,6 +361,25 @@ function getJ_(key) {
     cache.put(key, s, SIX_HOURS);
   }
   return JSON.parse(s);
+}
+
+/** Read many small JSON values at once: one cache call, properties only for what the cache lost. */
+function getAllJ_(keys) {
+  const cache = CacheService.getScriptCache();
+  const hit = keys.length ? cache.getAll(keys) : {};
+  const out = {}, refill = {};
+  let props = null;
+  keys.forEach((k) => {
+    let s = hit[k];
+    if (s == null) {
+      props = props || PropertiesService.getScriptProperties();
+      s = props.getProperty(k);
+      if (s != null) refill[k] = s;
+    }
+    if (s != null) out[k] = JSON.parse(s);
+  });
+  if (Object.keys(refill).length) cache.putAll(refill, SIX_HOURS);
+  return out;
 }
 
 /** Write a small JSON value to both the cache and script properties. */

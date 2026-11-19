@@ -9,7 +9,12 @@ function makeSheet(rows) {
     getDataRange() { return { getValues: () => rows.map((r) => r.slice()) }; },
     getLastRow() { return rows.length; },
     getRange(r, c, nr, nc) {
-      return { getValues: () => rows.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)) };
+      return {
+        getValues: () => rows.slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)),
+        setValues: (vals) => vals.forEach((v, i) => {
+          rows[r - 1 + i] = v.map((x) => (typeof x === 'string' && x[0] === "'") ? x.slice(1) : x);
+        })
+      };
     },
     setFrozenRows() {}
   };
@@ -23,10 +28,12 @@ function loadCodeGs(file) {
   };
   const ctx = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true; }, releaseLock() {} }) },
     CacheService: {
       getScriptCache: () => ({
         get: (k) => (k in cache ? cache[k] : null),
+        getAll: (ks) => { const o = {}; ks.forEach((k) => { if (k in cache) o[k] = cache[k]; }); return o; },
+        putAll: (obj) => { Object.assign(cache, obj); },
         put: (k, v) => { if (String(v).length > 100000) throw new Error('cache value too big'); cache[k] = String(v); },
         remove: (k) => { delete cache[k]; }
       })

@@ -46,6 +46,19 @@ for (const v of ['yes', 'yes', 'yes']) {
 assert(G.post({ action: 'r2guess', run, client: 't1', guess: 'the = goes under the +' }).ok);
 assert(!G.post({ action: 'r2draw', run, client: 't1', img: 'data:text/html,hi' }).ok, 'only PNG drawings');
 
+// Gallery images come from the cache.
+{ const gal = G.get({ action: 'r2gallery', run });
+  assert.strictEqual(gal.drawings.length, 4); assert.strictEqual(gal.drawings[0].img, img);
+  assert(RULES.includes(gal.drawings[0].rule)); }
+
+// The results page's polling copies everything into the sheet, once, with images.
+G.get({ action: 'r2stats', run }); G.dropCache(); G.get({ action: 'r2stats', run });
+{ const rows = G.sheets.Drawings.rows.slice(1);
+  assert.strictEqual(rows.length, 4, 'four drawings archived exactly once');
+  assert.deepStrictEqual(rows.map((r) => r[5]), ['no', 'yes', 'yes', 'yes']);
+  assert.strictEqual(rows[0][6], img, 'image archived');
+  assert.strictEqual(G.sheets.Guesses.rows.slice(1).length, 1); }
+
 // State survives the cache being wiped (properties are the backup).
 G.dropCache();
 gen = G.get({ action: 'r2state', run, client: 't1' });
@@ -59,9 +72,7 @@ assert.deepStrictEqual(stats.drawings.map((d) => d.verdict), ['no', 'yes', 'yes'
 assert.strictEqual(stats.guesses[0].guess, 'the = goes under the +');
 assert.strictEqual(stats.pairs.length, 2); assert(RULES.includes(stats.drawings[0].rule));
 assert.strictEqual(stats.pairs[0].rule, stats.drawings[0].rule);
-const gal = G.get({ action: 'r2gallery', run });
-assert.strictEqual(gal.drawings.length, 4); assert.strictEqual(gal.drawings[0].img, img);
-assert(RULES.includes(gal.drawings[0].rule));
+// (Images live only in the cache, so after the wipe above the gallery has none; the sheet keeps them.)
 assert.strictEqual(G.get({ action: 'r2stats', run: 'other' }).drawings.length, 0, 'sessions are separate');
 
 // Round 1 still works alongside.
