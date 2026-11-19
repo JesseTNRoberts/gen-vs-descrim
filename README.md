@@ -18,10 +18,12 @@ Open `index.html?demo=1` to see everything with a fake class, no setup needed.
 
 ## The mystery language
 
-Every syllable is a consonant followed by a vowel (*ka, mi, to*), and a word may end in a bare
-**n**. Any consonant counts (*y* included) and words can be any length.
-Students see 16 example words. Discriminators judge 10 words in a shuffled order: 5 belong
-(two end in *n*), 5 impostors that each break the rule in one way.
+Every syllable is a consonant followed by a vowel (*ka, mi, to*), and a bare **n** may follow any
+syllable, at the end (*te-zu-ra-n*) or in the middle (*bo-n-ta-ku*). Any consonant counts
+(*y* included) and words can be any length. Students see 16 example words, two with a middle *n*.
+Discriminators judge 10 words in a shuffled order: 5 belong, 5 impostors that each break the rule
+in one way. The gotcha is *hinporu*: its middle *n* looks like the consonant cluster in the
+impostor *kasrino*, but it's allowed.
 
 ## How it's scored
 

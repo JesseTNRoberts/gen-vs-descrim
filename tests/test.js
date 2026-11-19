@@ -12,12 +12,19 @@ L.testItems.forEach((t) => {
   assert(!L.examples.includes(t.word), 'test word is also an example: ' + t.word);
 });
 for (const [w, ok] of [['Kamino ', true], ['ka', true], ['kana', true], ['kanan', true], ['kann', false],
-                       ['akami', false], ['kantaro', false], ['lomaki', true], ['fovaju', true], ['yuki', true],
-                       ['kamit', false], ['n', false], ['', false]]) {
+                       ['akami', false], ['kantaro', true], ['lomaki', true], ['fovaju', true], ['yuki', true],
+                       ['honda', true], ['kanpai', false], ['kamit', false], ['n', false], ['', false],
+                       ['nka', false], ['hinporu', true], ['kasrino', false], ['kanna', true]]) {
   assert.strictEqual(S.isValid(L, w), ok, 'edge case ' + w);
 }
 
 // ---------- Scoring ----------
+// Chance level agrees with brute force on 4-letter strings.
+{ let ok = 0; const A = 'abcdefghijklmnopqrstuvwxyz';
+  for (const a of A) for (const b of A) for (const c of A) for (const d of A) if (S.isValid(L, a + b + c + d)) ok++;
+  const cv = L.consonants.length * L.vowels.length;
+  assert.strictEqual(ok, cv * cv + 0, '4-letter count'); }
+
 const g = S.scoreGenerators(L, [
   { words: ['sorimo', 'sorimo', 'kamino', 'tamekot', 'kasrino'], difficulty: 4 },  // 1 good, 1 repeat, 1 copy, 2 invalid
   { words: ['sorimo', 'hanuten', 'mikado', 'zubera', 'yomikan'], difficulty: 3 }   // 5 good
