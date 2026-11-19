@@ -428,6 +428,21 @@
     return rows;
   }
 
+  // ---------------- Stay in sync with other copies of this page ----------------
+  // E.g. the Join and Results slides of a reveal.js deck: when one gets a new code,
+  // the browser fires a "storage" event in the others, and they switch too.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'gvd-run') return;
+    const next = loadRun();
+    if (next === run) return;
+    run = next;
+    demoStart = Date.now();
+    lastData = null;
+    renderJoin();
+    render(null);
+    poll();
+  });
+
   // ---------------- Start ----------------
   $('demoFlag').hidden = !DEMO;
   if (params.get('view') === 'results') setTab('results');
