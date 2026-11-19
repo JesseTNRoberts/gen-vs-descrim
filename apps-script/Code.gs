@@ -49,7 +49,7 @@ function doPost(e) {
       // Only joining needs the script-wide lock (it hands out the next arrival number).
       // Drawing and judging touch only their own pair's state, and the two teams take turns,
       // so they skip the lock: a busy classroom never queues behind one slow sheet write.
-      case 'r2join':  return json_(withLock_(() => r2Join_(body)));
+      case 'r2join':  return json_(r2Join_(body));
       case 'r2draw':  return json_(r2Draw_(body));
       case 'r2judge': return json_(r2Judge_(body));
       case 'r2guess': return json_(r2Guess_(body));
@@ -141,7 +141,6 @@ const K_ = {
   count:  (run) => 'r2n:' + run,                        // teams joined so far
   team:   (run, client) => 'r2c:' + run + ':' + client, // {role, pair}
   state:  (run, pair) => 'r2s:' + run + ':' + pair,     // {rule, attempt, pending, verdicts}
-  order:  (run) => 'r2order:' + run,                    // this session's shuffled rule order
   image:  (run, pair, attempt) => 'r2i:' + run + ':' + pair + ':' + attempt,
   stats:  (run) => 'r2stats:' + run
 };
@@ -150,22 +149,42 @@ function r2Join_(b) {
   const run = needRun_(b.run), client = needClient_(b.client);
   const known = getJ_(K_.team(run, client));
   if (known) return { ok: true, role: known.role, pair: known.pair };
-  const n = Number(getJ_(K_.count(run)) || 0);
-  const team = { role: n % 2 === 0 ? 'generator' : 'discriminator', pair: Math.floor(n / 2) + 1 };
-  if (team.role === 'generator') {
-    // A new pair: pick its rule from this session's shuffled rotation.
-    let order = getJ_(K_.order(run));
-    if (!order) {
-      order = RULES.slice();
-      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-      putJ_(K_.order(run), order);
-    }
-    putJ_(K_.state(run, team.pair), { rule: order[(team.pair - 1) % order.length], attempt: 0, pending: false, verdicts: [] });
+
+  // Hold the lock only long enough to take the next arrival number and record this team.
+  let team;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try {
+    const again = getJ_(K_.team(run, client));        // a retry that already got in
+    if (again) return { ok: true, role: again.role, pair: again.pair };
+    const props = PropertiesService.getScriptProperties();
+    const n = Number(props.getProperty(K_.count(run)) || 0);
+    props.setProperty(K_.count(run), String(n + 1));
+    team = { role: n % 2 === 0 ? 'generator' : 'discriminator', pair: Math.floor(n / 2) + 1 };
+    putJ_(K_.team(run, client), team);
+  } finally {
+    lock.releaseLock();
   }
-  putJ_(K_.count(run), n + 1);
-  putJ_(K_.team(run, client), team);
+  CacheService.getScriptCache().remove(K_.count(run));
+  if (team.role === 'generator') {
+    putJ_(K_.state(run, team.pair), { rule: ruleFor_(run, team.pair), attempt: 0, pending: false, verdicts: [] });
+  }
   CacheService.getScriptCache().remove(K_.stats(run));
   return { ok: true, role: team.role, pair: team.pair };
+}
+
+/** Pair p's rule: the four rules in an order shuffled once per session (seeded by the session code). */
+function ruleFor_(run, pair) {
+  let seed = 0;
+  for (let i = 0; i < run.length; i++) seed = (seed * 31 + run.charCodeAt(i)) % 2147483647;
+  seed = seed || 1;
+  const order = RULES.slice();
+  for (let i = order.length - 1; i > 0; i--) {
+    seed = (seed * 16807) % 2147483647;
+    const j = seed % (i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order[(pair - 1) % order.length];
 }
 
 function r2State_(run, client) {

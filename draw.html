@@ -196,7 +196,7 @@
       if (me.role === 'generator') startGenerator(); else startJudge();
       poll(); setInterval(poll, POLL_MS);
     }).catch(() => {
-      if (tries > 0) setTimeout(() => join(tries - 1), 1500);
+      if (tries > 0) setTimeout(() => join(tries - 1), 1000 + Math.random() * 2500);   // spread out retries in a rush
       else problem('Couldn’t reach the class server. Check your connection and try again.');
     });
   }
@@ -407,7 +407,7 @@
     };
   })();
 
-  join(3);
+  join(6);
 })();
 </script>
 </body>
